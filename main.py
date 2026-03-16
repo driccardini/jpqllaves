@@ -471,9 +471,7 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
       .bracket-wrap {{
                 border: 1px solid rgba(255, 255, 255, 0.13);
                 border-radius: 16px;
-        overflow-x: auto;
-        overflow-y: hidden;
-        -webkit-overflow-scrolling: touch;
+        overflow: hidden;
                 padding: 14px;
             background: linear-gradient(140deg, rgba(28, 36, 54, 0.95) 0%, rgba(21, 28, 42, 0.98) 100%);
                 box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
@@ -484,10 +482,12 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
         width: {width}px;
                 height: {board_height}px;
                                 padding-top: 20px;
+        transform-origin: top left;
       }}
             .bracket-viewport {{
                 position: relative;
-                min-width: {width}px;
+                overflow: hidden;
+                width: 100%;
             }}
             .bracket-lines {{
                 position: absolute;
@@ -601,18 +601,33 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
             }}
             @media (max-width: 768px) {{
                 .bracket-wrap {{
-                    padding: 8px;
+                    padding: 6px;
                     border-radius: 12px;
-                }}
-                .node {{
-                    font-size: 0.78rem;
-                }}
-                .round-label {{
-                    font-size: 0.66rem;
-                    padding: 2px 8px;
                 }}
             }}
     </style>
+    <script>
+    (function() {{
+      var BOARD_W = {width};
+      var BOARD_H = {board_height};
+
+      function applyScale() {{
+        var wrap = document.querySelector('.bracket-wrap');
+        var viewport = document.querySelector('.bracket-viewport');
+        var board = document.querySelector('.bracket-board');
+        if (!wrap || !board) return;
+        var padH = parseInt(getComputedStyle(wrap).paddingLeft) +
+                   parseInt(getComputedStyle(wrap).paddingRight);
+        var available = wrap.clientWidth - padH;
+        var scale = Math.min(1, available / BOARD_W);
+        board.style.transform = 'scale(' + scale + ')';
+        viewport.style.height = Math.ceil(BOARD_H * scale) + 'px';
+      }}
+
+      document.addEventListener('DOMContentLoaded', applyScale);
+      window.addEventListener('resize', applyScale);
+    }})();
+    </script>
     <div class="bracket-wrap">
             <div class="bracket-viewport">
                 <div class="bracket-board">
