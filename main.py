@@ -460,7 +460,13 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
     round_labels_html = _build_round_labels(nodes=node_data)
     matchups_html = _build_matchups_html(nodes=node_data)
 
-    html = f"""
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, minimum-scale=0.5, maximum-scale=4.0">
+</head>
+<body style="margin:0;padding:0;background:#0f1520;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#e8edf9;">
     <style>
       .bracket-wrap {{
                 border: 1px solid rgba(255, 255, 255, 0.13);
@@ -622,6 +628,8 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
       </div>
             {matchups_html}
     </div>
+</body>
+</html>
     """
 
     st.subheader(f"Categoría {category}")
