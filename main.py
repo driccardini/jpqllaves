@@ -357,10 +357,12 @@ def _build_matchup_guides_svg(nodes: List[Dict[str, object]]) -> str:
     return "".join(guides)
 
 
+LABEL_ROW_HEIGHT = 28
+
 def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
     rows, cols = grid.shape
     width = max(900, cols * CELL_WIDTH + 40)
-    height = max(380, rows * CELL_HEIGHT + 20)
+    height = max(380, rows * CELL_HEIGHT + LABEL_ROW_HEIGHT + 20)
     board_height = height + 26
 
     legend_start_row: Optional[int] = None
@@ -417,7 +419,7 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
 
             cls = _cell_class(text)
             extra_class = ""
-            top = row_idx * CELL_HEIGHT
+            top = row_idx * CELL_HEIGHT + LABEL_ROW_HEIGHT
             left = col_idx * CELL_WIDTH
 
             if first_round_col is not None:
@@ -436,7 +438,7 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
                 )
                 if right_text and below_right_text:
                     if _cell_class(right_text) == "team" and _cell_class(below_right_text) == "team":
-                        top = row_idx * CELL_HEIGHT + CELL_HEIGHT // 2
+                        top = row_idx * CELL_HEIGHT + CELL_HEIGHT // 2 + LABEL_ROW_HEIGHT
                         left = (col_idx + 1) * CELL_WIDTH - 44
                         cls = "seed-between"
 
@@ -481,7 +483,6 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
         position: relative;
         width: {width}px;
                 height: {board_height}px;
-                                padding-top: 20px;
         transform-origin: top left;
       }}
             .bracket-viewport {{
@@ -525,7 +526,7 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
                 position: sticky;
                 top: 0;
                 z-index: 10;
-                height: 26px;
+                height: {LABEL_ROW_HEIGHT}px;
             }}
       .node {{
         position: absolute;
