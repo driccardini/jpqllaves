@@ -362,8 +362,6 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
     width = max(900, cols * CELL_WIDTH + 40)
     height = max(380, rows * CELL_HEIGHT + 20)
     board_height = height + 26
-    mobile_scale = 0.78
-    mobile_board_height = int(board_height * mobile_scale) + 20
 
     legend_start_row: Optional[int] = None
     first_round_col: Optional[int] = None
@@ -469,6 +467,7 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
                 border-radius: 16px;
         overflow-x: auto;
         overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
                 padding: 14px;
             background: linear-gradient(140deg, rgba(28, 36, 54, 0.95) 0%, rgba(21, 28, 42, 0.98) 100%);
                 box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
@@ -482,6 +481,7 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
       }}
             .bracket-viewport {{
                 position: relative;
+                min-width: {width}px;
             }}
             .bracket-lines {{
                 position: absolute;
@@ -598,16 +598,8 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
                     padding: 8px;
                     border-radius: 12px;
                 }}
-                .bracket-viewport {{
-                    height: {mobile_board_height}px;
-                }}
-                .bracket-board {{
-                    transform: scale({mobile_scale});
-                    transform-origin: top left;
-                }}
                 .node {{
-                    font-size: 0.72rem;
-                    max-width: 190px;
+                    font-size: 0.78rem;
                 }}
                 .round-label {{
                     font-size: 0.66rem;
