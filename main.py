@@ -2941,7 +2941,7 @@ def _build_matchup_guides_svg(
     for match in first_round_matches:
         match_row = int(match["row"])
         candidate_teams = sorted(
-            [team for team in teams if abs(int(team["row"]) - match_row) <= 8],
+            [team for team in teams],
             key=lambda team: int(team["row"]),
         )
         upper_teams = [team for team in candidate_teams if int(team["row"]) <= match_row][-2:]
