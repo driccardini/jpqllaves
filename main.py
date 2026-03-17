@@ -2931,13 +2931,6 @@ def _build_matchup_guides_svg(
 
     guides: List[str] = []
     for match in first_round_matches:
-        is_c5c6c7_generic = (
-            (category or "").lower().startswith(("c5", "c6", "c7"))
-            and (category or "").lower() not in {"c6 35", "c6 40", "c7 40", "c5 40"}
-        )
-        # Match 49 in generic c5/c6/c7 is handled explicitly below (seeds 1°B & 2°A)
-        if is_c5c6c7_generic and str(match["text"]).strip() == "49":
-            continue
         match_row = int(match["row"])
         candidate_teams = sorted(
             [team for team in teams if abs(int(team["row"]) - match_row) <= 8],
@@ -2945,12 +2938,28 @@ def _build_matchup_guides_svg(
         )
         upper_teams = [team for team in candidate_teams if int(team["row"]) <= match_row][-2:]
         lower_teams = [team for team in candidate_teams if int(team["row"]) > match_row][:2]
-        nearby_teams = sorted(upper_teams + lower_teams, key=lambda team: int(team["row"]))
-        if len(nearby_teams) < 2:
+        nearby_participants = sorted(upper_teams + lower_teams, key=lambda team: int(team["row"]))
+
+        if len(nearby_participants) < 2:
+            candidate_seeds = sorted(
+                [
+                    node
+                    for node in nodes
+                    if node["class"] in {"seed", "seed-between"}
+                    and abs(int(node["row"]) - match_row) <= 8
+                    and (legend_start_row is None or int(node["row"]) < legend_start_row)
+                ],
+                key=lambda node: int(node["row"]),
+            )
+            upper_seeds = [node for node in candidate_seeds if int(node["row"]) <= match_row][-2:]
+            lower_seeds = [node for node in candidate_seeds if int(node["row"]) > match_row][:2]
+            nearby_participants = sorted(upper_seeds + lower_seeds, key=lambda node: int(node["row"]))
+
+        if len(nearby_participants) < 2:
             continue
 
         # Find seeds on the same rows as teams
-        team_rows = {int(t["row"]) for t in nearby_teams}
+        team_rows = {int(t["row"]) for t in nearby_participants}
         nearby_seeds = [
             n
             for n in nodes
@@ -2962,8 +2971,8 @@ def _build_matchup_guides_svg(
             )
         ]
         
-        # Bounding box from seeds + teams + match
-        all_nodes = nearby_seeds + nearby_teams + [match]
+        # Bounding box from seeds + participants + match
+        all_nodes = nearby_seeds + nearby_participants + [match]
         min_x = min(int(n["x"]) for n in all_nodes)
         min_y = min(int(n["y"]) for n in all_nodes)
         max_y = max(int(n["y"]) + CELL_HEIGHT for n in all_nodes)
@@ -2977,54 +2986,6 @@ def _build_matchup_guides_svg(
         guides.append(
             f'<rect x="{box_x}" y="{box_y}" width="{box_w}" height="{box_h}" rx="8" class="matchup-guide"></rect>'
         )
-
-    # Explicit guide for match 49 in generic c5/c6/c7 (1°B vs 2°A, seeds feed directly)
-    if (
-        (category or "").lower().startswith(("c5", "c6", "c7"))
-        and (category or "").lower() not in {"c6 35", "c6 40", "c7 40", "c5 40"}
-    ):
-        match_49_node = next(
-            (
-                n
-                for n in nodes
-                if n["class"] == "match-id"
-                and str(n["text"]).strip() == "49"
-                and (legend_start_row is None or int(n["row"]) < legend_start_row)
-            ),
-            None,
-        )
-        seed_1b = next(
-            (
-                n
-                for n in nodes
-                if n["class"] in {"seed", "seed-between"}
-                and str(n["text"]).strip() == "1° B"
-                and (legend_start_row is None or int(n["row"]) < legend_start_row)
-            ),
-            None,
-        )
-        seed_2a = next(
-            (
-                n
-                for n in nodes
-                if n["class"] in {"seed", "seed-between"}
-                and str(n["text"]).strip() == "2° A"
-                and (legend_start_row is None or int(n["row"]) < legend_start_row)
-            ),
-            None,
-        )
-        if match_49_node and seed_1b and seed_2a:
-            all_49 = [seed_1b, seed_2a, match_49_node]
-            min_x_49 = min(int(n["x"]) for n in all_49)
-            min_y_49 = min(int(n["y"]) for n in all_49)
-            max_y_49 = max(int(n["y"]) + CELL_HEIGHT for n in all_49)
-            box_x_49 = min_x_49 - 50
-            box_y_49 = min_y_49 - 6
-            box_w_49 = 280
-            box_h_49 = max_y_49 - min_y_49 + 12
-            guides.append(
-                f'<rect x="{box_x_49}" y="{box_y_49}" width="{box_w_49}" height="{box_h_49}" rx="8" class="matchup-guide"></rect>'
-            )
 
     return "".join(guides)
 
