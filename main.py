@@ -2941,6 +2941,10 @@ def _build_matchup_guides_svg(
         )
         upper_teams = [team for team in candidate_teams if int(team["row"]) <= match_row][-2:]
         lower_teams = [team for team in candidate_teams if int(team["row"]) > match_row][:2]
+
+        if (category or "").lower() == "d2" and (not upper_teams or not lower_teams):
+            continue
+
         nearby_participants = sorted(upper_teams + lower_teams, key=lambda team: int(team["row"]))
 
         if len(nearby_participants) < 2:
