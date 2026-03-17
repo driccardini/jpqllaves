@@ -370,8 +370,14 @@ def _build_connectors(
 
     if (category or "").lower() == "c4":
         def find_direct_anchor(seed_label: str) -> Optional[tuple[int, int]]:
+            seed_text = seed_label.strip()
             seed_node = next(
-                (node for node in nodes if node["class"] == "seed" and str(node["text"]) == seed_label),
+                (
+                    node
+                    for node in nodes
+                    if node["class"] in {"seed", "seed-between"}
+                    and str(node["text"]).strip() == seed_text
+                ),
                 None,
             )
             if seed_node is None:
@@ -645,17 +651,17 @@ def _compute_connector_pairs(
             connector_pairs.append((left_node, right_node))
 
         explicit_c4_pairs = [
-            ("35", "49"),
+            ("34", "49"),
+            ("35", "50"),
             ("36", "50"),
-            ("37", "50"),
             ("37", "51"),
-            ("39", "52"),
-            ("40", "53"),
+            ("38", "52"),
+            ("39", "53"),
+            ("40", "54"),
             ("41", "54"),
-            ("42", "54"),
+            ("42", "55"),
             ("43", "55"),
-            ("44", "55"),
-            ("45", "56"),
+            ("44", "56"),
             ("49", "57"),
             ("50", "57"),
             ("51", "58"),
