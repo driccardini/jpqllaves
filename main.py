@@ -157,6 +157,7 @@ def _match_stage(value: str) -> Optional[int]:
 def _build_connectors(
     nodes: List[Dict[str, object]],
     board_rows: int,
+    category: Optional[str] = None,
 ) -> str:
     legend_rows = [int(node["row"]) for node in nodes if node["class"] == "legend"]
     legend_start_row = min(legend_rows) if legend_rows else None
@@ -188,18 +189,14 @@ def _build_connectors(
         stage_map[stage].sort(key=lambda item: int(item["row"]))
 
     sorted_stages = sorted(stage_map.keys())
-    connector_paths: List[str] = []
+    connector_pairs: List[tuple[Dict[str, object], Dict[str, object]]] = []
 
     def route(x1: int, y1: int, x2: int, y2: int) -> str:
         mid_x = x1 + max(14, (x2 - x1) // 2)
         return f"M{x1},{y1} H{mid_x} V{y2} H{x2}"
 
     def connect(left_node: Dict[str, object], right_node: Dict[str, object]) -> None:
-        x1 = int(left_node["x"]) + 78
-        y1 = int(left_node["y"]) + 12
-        x2 = int(right_node["x"]) - 4
-        y2 = int(right_node["y"]) + 12
-        connector_paths.append(route(x1, y1, x2, y2))
+        connector_pairs.append((left_node, right_node))
 
     for idx in range(len(sorted_stages) - 1):
         left_stage = sorted_stages[idx]
@@ -243,6 +240,42 @@ def _build_connectors(
                 end_idx = round((right_idx + 1) * left_count / right_count)
                 for left_node in left_nodes[start_idx:end_idx]:
                     connect(left_node, right_node)
+
+    if (category or "").lower() == "c4":
+        match_nodes_by_number: Dict[str, List[Dict[str, object]]] = {}
+        for node in match_nodes:
+            match_nodes_by_number.setdefault(str(node["text"]), []).append(node)
+
+        for key in match_nodes_by_number:
+            match_nodes_by_number[key].sort(key=lambda item: int(item["row"]))
+
+        def force_pair(left_number: str, right_number: str) -> None:
+            left_candidates = match_nodes_by_number.get(left_number, [])
+            right_candidates = match_nodes_by_number.get(right_number, [])
+            if not left_candidates or not right_candidates:
+                return
+
+            left_node = left_candidates[0]
+            right_node = right_candidates[0]
+
+            connector_pairs[:] = [
+                (left, right)
+                for left, right in connector_pairs
+                if left is not left_node
+            ]
+            connector_pairs.append((left_node, right_node))
+
+        force_pair("34", "49")
+        force_pair("50", "58")
+        force_pair("53", "58")
+
+    connector_paths: List[str] = []
+    for left_node, right_node in connector_pairs:
+        x1 = int(left_node["x"]) + 78
+        y1 = int(left_node["y"]) + 12
+        x2 = int(right_node["x"]) - 4
+        y2 = int(right_node["y"]) + 12
+        connector_paths.append(route(x1, y1, x2, y2))
 
     return "".join(
         f'<path d="{path}" class="connector"></path>' for path in connector_paths
@@ -516,7 +549,7 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
                 f'<div class="node {cls}{extra_class}" style="top:{top}px;left:{left}px;">{safe_text}</div>'
             )
 
-    connectors_svg = _build_connectors(nodes=node_data, board_rows=rows)
+    connectors_svg = _build_connectors(nodes=node_data, board_rows=rows, category=category)
     matchup_guides_svg = _build_matchup_guides_svg(nodes=node_data)
     round_labels_html = _build_round_labels(nodes=node_data)
     matchups_html = _build_matchups_html(nodes=node_data)
