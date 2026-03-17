@@ -85,7 +85,7 @@ def _find_data_sheet(sheet_names: List[str]) -> Optional[str]:
     return None
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def load_brackets() -> Dict[str, Dict[str, object]]:
     brackets: Dict[str, Dict[str, object]] = {}
 
