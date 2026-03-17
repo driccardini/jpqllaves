@@ -3146,9 +3146,9 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
 
     category_key = (category or "").lower()
     if category_key.startswith(("c4", "c5", "c6", "c7")):
-        watermark_width_css = "90%"
-        watermark_height_css = "90%"
-        watermark_fit_css = "contain"
+        watermark_width_css = "100%"
+        watermark_height_css = "100%"
+        watermark_fit_css = "cover"
         watermark_opacity_css = "0.16"
     else:
         watermark_width_css = "100%"
