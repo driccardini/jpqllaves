@@ -218,12 +218,41 @@ def _build_connectors(
         mid_x = x1 + max(14, (x2 - x1) // 2)
         return f"M{x1},{y1} H{mid_x} V{y2} H{x2}"
 
+    def target_x(right_node: Dict[str, object]) -> int:
+        default_x = int(right_node["x"]) + 88
+        if (category or "").lower() != "c3":
+            return default_x
+
+        right_text = str(right_node["text"]).strip()
+        digits = right_text.replace(".", "", 1)
+        if digits.isdigit():
+            match_number = int(float(right_text))
+            if match_number >= 57:
+                return int(right_node["x"]) - 12
+        return default_x
+
+    def source_x(left_node: Dict[str, object]) -> int:
+        default_x = int(left_node["x"]) + 78
+        if (category or "").lower() != "c3":
+            return default_x
+
+        if left_node.get("class") != "match-id":
+            return default_x
+
+        left_text = str(left_node["text"]).strip()
+        digits = left_text.replace(".", "", 1)
+        if digits.isdigit():
+            match_number = int(float(left_text))
+            if match_number >= 57:
+                return int(left_node["x"]) + 106
+        return default_x
+
     connector_paths: List[str] = []
     c3_shared_trunk_x_by_target: Dict[str, int] = {}
     for left_node, right_node in connector_pairs:
-        x1 = int(left_node["x"]) + 78
+        x1 = source_x(left_node)
         y1 = int(left_node["y"]) + 12
-        x2 = int(right_node["x"]) + 88
+        x2 = target_x(right_node)
         y2 = int(right_node["y"]) + 12
 
         if (category or "").lower() == "c3":
@@ -296,7 +325,9 @@ def _build_connectors(
                 and target_number == "57"
                 and "57" in c3_shared_trunk_x_by_target
             ):
-                connector_paths.append(f"M{x1},{y1} H{c3_shared_trunk_x_by_target['57']} V{y2}")
+                x2 = int(target_node["x"]) - 12
+                x1_left = int(anchor[0]) - 16
+                connector_paths.append(f"M{x1_left},{y1} H{x2} V{y2}")
                 return
 
             if (
@@ -304,7 +335,9 @@ def _build_connectors(
                 and target_number == "59"
                 and "59" in c3_shared_trunk_x_by_target
             ):
-                connector_paths.append(f"M{x1},{y1} H{c3_shared_trunk_x_by_target['59']} V{y2}")
+                x2 = int(target_node["x"]) - 12
+                x1_left = int(anchor[0]) - 16
+                connector_paths.append(f"M{x1_left},{y1} H{x2} V{y2}")
                 return
 
             if (
@@ -312,7 +345,9 @@ def _build_connectors(
                 and target_number == "60"
                 and "60" in c3_shared_trunk_x_by_target
             ):
-                connector_paths.append(f"M{x1},{y1} H{c3_shared_trunk_x_by_target['60']} V{y2}")
+                x2 = int(target_node["x"]) - 12
+                x1_left = int(anchor[0]) - 16
+                connector_paths.append(f"M{x1_left},{y1} H{x2} V{y2}")
                 return
 
             x2 = int(target_node["x"]) - 12
@@ -441,7 +476,7 @@ def _build_connectors(
 
             x1 = anchor[0] + 78
             y1 = anchor[1]
-            x2 = int(target_node["x"]) + 88
+            x2 = target_x(target_node)
             y2 = int(target_node["y"]) + 12
             connector_paths.append(route(x1, y1, x2, y2))
 
@@ -680,27 +715,47 @@ def _compute_connector_pairs(
             connector_pairs.append((left_b_nodes[0], target_node))
 
     if (category or "").lower() == "c3":
-        connector_pairs = [
-            (left_node, right_node)
-            for left_node, right_node in connector_pairs
-            if not (str(left_node["text"]).strip() == "50" and str(right_node["text"]).strip() == "61")
+        match_nodes_by_number: Dict[str, List[Dict[str, object]]] = {}
+        for node in match_nodes:
+            match_nodes_by_number.setdefault(str(node["text"]).strip(), []).append(node)
+
+        for key in match_nodes_by_number:
+            match_nodes_by_number[key].sort(key=lambda item: int(item["row"]))
+
+        connector_pairs = []
+        used_left_by_number: Dict[str, int] = {}
+
+        def connect_by_number(left_number: str, right_number: str) -> None:
+            left_candidates = match_nodes_by_number.get(left_number, [])
+            right_candidates = match_nodes_by_number.get(right_number, [])
+            if not left_candidates or not right_candidates:
+                return
+
+            left_index = used_left_by_number.get(left_number, 0)
+            if left_index >= len(left_candidates):
+                left_index = len(left_candidates) - 1
+
+            left_node = left_candidates[left_index]
+            right_node = right_candidates[0]
+            used_left_by_number[left_number] = left_index + 1
+            connector_pairs.append((left_node, right_node))
+
+        explicit_c3_pairs = [
+            ("50", "57"),
+            ("51", "58"),
+            ("52", "58"),
+            ("54", "59"),
+            ("55", "60"),
+            ("57", "61"),
+            ("58", "61"),
+            ("59", "62"),
+            ("60", "62"),
+            ("61", "64"),
+            ("62", "64"),
         ]
 
-        match_50 = next(
-            (node for node in match_nodes if str(node["text"]).strip() == "50"),
-            None,
-        )
-        match_57 = next(
-            (node for node in match_nodes if str(node["text"]).strip() == "57"),
-            None,
-        )
-        if match_50 is not None and match_57 is not None:
-            has_50_to_57 = any(
-                str(left_node["text"]).strip() == "50" and str(right_node["text"]).strip() == "57"
-                for left_node, right_node in connector_pairs
-            )
-            if not has_50_to_57:
-                connector_pairs.append((match_50, match_57))
+        for left_number, right_number in explicit_c3_pairs:
+            connect_by_number(left_number, right_number)
 
     return connector_pairs
 
@@ -862,6 +917,14 @@ def _align_match_nodes(
                 continue
             target_node["y"] = round((center_a + center_b) / 2) - 12
 
+        match_51 = match_nodes_by_number.get("51")
+        match_52 = match_nodes_by_number.get("52")
+        match_58 = match_nodes_by_number.get("58")
+        if match_58 is not None and match_51 is not None and match_52 is not None:
+            center_51 = int(match_51["y"]) + 12
+            center_52 = int(match_52["y"]) + 12
+            match_58["y"] = round((center_51 + center_52) / 2) - 12
+
         match_50 = match_nodes_by_number.get("50")
 
         match_57 = match_nodes_by_number.get("57")
@@ -869,6 +932,21 @@ def _align_match_nodes(
         if match_57 is not None and match_50 is not None and center_1a is not None:
             center_50 = int(match_50["y"]) + 12
             match_57["y"] = round((center_1a + center_50) / 2) - 12
+
+        match_58 = match_nodes_by_number.get("58")
+        match_61 = match_nodes_by_number.get("61")
+        if match_61 is not None and match_57 is not None and match_58 is not None:
+            center_57 = int(match_57["y"]) + 12
+            center_58 = int(match_58["y"]) + 12
+            match_61["y"] = round((center_57 + center_58) / 2) - 12
+
+        match_59 = match_nodes_by_number.get("59")
+        match_60 = match_nodes_by_number.get("60")
+        match_62 = match_nodes_by_number.get("62")
+        if match_62 is not None and match_59 is not None and match_60 is not None:
+            center_59 = int(match_59["y"]) + 12
+            center_60 = int(match_60["y"]) + 12
+            match_62["y"] = round((center_59 + center_60) / 2) - 12
 
 
 def _build_round_labels(nodes: List[Dict[str, object]], category: Optional[str] = None) -> str:
