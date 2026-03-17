@@ -134,6 +134,26 @@ def _cell_class(value: str) -> str:
     return "team"
 
 
+def _match_stage(value: str) -> Optional[int]:
+    text = value.strip()
+    digits = text.replace(".", "", 1)
+    if not digits.isdigit():
+        return None
+
+    match_number = int(float(text))
+    if 34 <= match_number <= 49:
+        return 0  # 16vos
+    if 50 <= match_number <= 57:
+        return 1  # 8vos
+    if 58 <= match_number <= 61:
+        return 2  # 4tos
+    if 62 <= match_number <= 63:
+        return 3  # Semi
+    if match_number == 64:
+        return 4  # Final
+    return None
+
+
 def _build_connectors(
     nodes: List[Dict[str, object]],
     board_rows: int,
@@ -157,15 +177,17 @@ def _build_connectors(
     if len(match_nodes) < 2:
         return ""
 
-    col_map: Dict[int, List[Dict[str, object]]] = {}
+    stage_map: Dict[int, List[Dict[str, object]]] = {}
     for node in match_nodes:
-        col = int(node["col"])
-        col_map.setdefault(col, []).append(node)
+        stage = _match_stage(str(node["text"]))
+        if stage is None:
+            continue
+        stage_map.setdefault(stage, []).append(node)
 
-    for col in col_map:
-        col_map[col].sort(key=lambda item: int(item["row"]))
+    for stage in stage_map:
+        stage_map[stage].sort(key=lambda item: int(item["row"]))
 
-    sorted_cols = sorted(col_map.keys())
+    sorted_stages = sorted(stage_map.keys())
     connector_paths: List[str] = []
 
     def route(x1: int, y1: int, x2: int, y2: int) -> str:
@@ -179,9 +201,14 @@ def _build_connectors(
         y2 = int(right_node["y"]) + 12
         connector_paths.append(route(x1, y1, x2, y2))
 
-    for idx in range(len(sorted_cols) - 1):
-        left_nodes = col_map[sorted_cols[idx]]
-        right_nodes = col_map[sorted_cols[idx + 1]]
+    for idx in range(len(sorted_stages) - 1):
+        left_stage = sorted_stages[idx]
+        right_stage = sorted_stages[idx + 1]
+        if right_stage != left_stage + 1:
+            continue
+
+        left_nodes = stage_map[left_stage]
+        right_nodes = stage_map[right_stage]
         if not right_nodes:
             continue
 
