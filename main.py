@@ -166,24 +166,27 @@ def _build_connectors(
         mid_x = x1 + max(14, (x2 - x1) // 2)
         return f"M{x1},{y1} H{mid_x} V{y2} H{x2}"
 
+    def connect(left_node: Dict[str, object], right_node: Dict[str, object]) -> None:
+        x1 = int(left_node["x"]) + 78
+        y1 = int(left_node["y"]) + 12
+        x2 = int(right_node["x"]) - 4
+        y2 = int(right_node["y"]) + 12
+        connector_paths.append(route(x1, y1, x2, y2))
+
     for idx in range(len(sorted_cols) - 1):
         left_nodes = col_map[sorted_cols[idx]]
         right_nodes = col_map[sorted_cols[idx + 1]]
         if not right_nodes:
             continue
 
-        for left_node in left_nodes:
-            left_row = int(left_node["row"])
-            nearest_right = min(
-                right_nodes,
-                key=lambda item: abs(int(item["row"]) - left_row),
-            )
+        left_count = len(left_nodes)
+        right_count = len(right_nodes)
 
-            x1 = int(left_node["x"]) + 78
-            y1 = int(left_node["y"]) + 12
-            x2 = int(nearest_right["x"]) - 4
-            y2 = int(nearest_right["y"]) + 12
-            connector_paths.append(route(x1, y1, x2, y2))
+        for right_idx, right_node in enumerate(right_nodes):
+            start_idx = round(right_idx * left_count / right_count)
+            end_idx = round((right_idx + 1) * left_count / right_count)
+            for left_node in left_nodes[start_idx:end_idx]:
+                connect(left_node, right_node)
 
     return "".join(
         f'<path d="{path}" class="connector"></path>' for path in connector_paths
