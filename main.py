@@ -890,8 +890,29 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
       }}
             .bracket-viewport {{
                 position: relative;
-                overflow: hidden;
+                overflow: auto;
                 width: 100%;
+                -webkit-overflow-scrolling: touch;
+                touch-action: pan-x pan-y pinch-zoom;
+            }}
+            .zoom-controls {{
+                position: absolute;
+                top: 8px;
+                right: 8px;
+                z-index: 20;
+                display: flex;
+                gap: 6px;
+            }}
+            .zoom-btn {{
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                background: rgba(18, 26, 42, 0.82);
+                color: #e8edf9;
+                border-radius: 8px;
+                padding: 4px 8px;
+                font-size: 0.78rem;
+                font-weight: 700;
+                line-height: 1;
+                cursor: pointer;
             }}
             .bracket-lines {{
                 position: absolute;
@@ -1053,6 +1074,13 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
     (function() {{
       var BOARD_W = {width};
       var BOARD_H = {board_height};
+            var userScale = 1;
+            var fitScale = 1;
+            var currentScale = 1;
+
+            function clamp(value, min, max) {{
+                return Math.max(min, Math.min(max, value));
+            }}
 
       function applyScale() {{
         var wrap = document.querySelector('.bracket-wrap');
@@ -1062,9 +1090,25 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
         var padH = parseInt(getComputedStyle(wrap).paddingLeft) +
                    parseInt(getComputedStyle(wrap).paddingRight);
         var available = wrap.clientWidth - padH;
-        var scale = Math.min(1, available / BOARD_W);
-        board.style.transform = 'scale(' + scale + ')';
-        viewport.style.height = Math.ceil(BOARD_H * scale) + 'px';
+                fitScale = Math.min(1, available / BOARD_W);
+                currentScale = clamp(fitScale * userScale, fitScale * 0.7, fitScale * 4);
+                board.style.transform = 'scale(' + currentScale + ')';
+                viewport.style.height = Math.ceil(BOARD_H * currentScale) + 'px';
+            }}
+
+            window.zoomIn = function() {{
+                userScale = clamp(userScale * 1.2, 0.7, 4);
+                applyScale();
+            }};
+
+            window.zoomOut = function() {{
+                userScale = clamp(userScale / 1.2, 0.7, 4);
+                applyScale();
+            }};
+
+            window.zoomReset = function() {{
+                userScale = 1;
+                applyScale();
       }}
 
       document.addEventListener('DOMContentLoaded', applyScale);
@@ -1072,6 +1116,11 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
     }})();
     </script>
     <div class="bracket-wrap">
+                        <div class="zoom-controls">
+                                <button class="zoom-btn" type="button" onclick="window.zoomOut()">−</button>
+                                <button class="zoom-btn" type="button" onclick="window.zoomReset()">100%</button>
+                                <button class="zoom-btn" type="button" onclick="window.zoomIn()">+</button>
+                        </div>
             <div class="bracket-viewport">
                 <div class="bracket-board">
                                     <svg class="bracket-lines" width="{width}" height="{height}">
