@@ -284,7 +284,44 @@ def _compute_connector_pairs(
             ]
             connector_pairs.append((left_node, right_node))
 
-        force_pair("34", "49")
+        def force_stage_links(left_nodes: List[Dict[str, object]], right_number_groups: List[tuple[str, int]]) -> None:
+            used_left_node_ids = {id(left) for left, _ in connector_pairs}
+            for right_number, count in right_number_groups:
+                right_candidates = match_nodes_by_number.get(right_number, [])
+                if not right_candidates:
+                    continue
+                right_node = right_candidates[0]
+                selected_left: List[Dict[str, object]] = []
+                for left_node in left_nodes:
+                    if id(left_node) in used_left_node_ids:
+                        continue
+                    selected_left.append(left_node)
+                    used_left_node_ids.add(id(left_node))
+                    if len(selected_left) == count:
+                        break
+
+                connector_pairs[:] = [
+                    (left, right)
+                    for left, right in connector_pairs
+                    if not (right is right_node and left in selected_left)
+                ]
+                for left_node in selected_left:
+                    connector_pairs[:] = [
+                        (left, right)
+                        for left, right in connector_pairs
+                        if left is not left_node
+                    ]
+                    connector_pairs.append((left_node, right_node))
+
+        stage0_nodes = sorted(
+            [node for node in match_nodes if _match_stage(str(node["text"])) == 0],
+            key=lambda item: int(item["row"]),
+        )
+        force_stage_links(
+            stage0_nodes,
+            [("49", 1), ("50", 2), ("51", 1), ("52", 1), ("53", 1), ("54", 2), ("55", 2), ("56", 1)],
+        )
+
         force_pair("49", "57")
         force_pair("50", "57")
         force_pair("51", "58")
