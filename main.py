@@ -2940,7 +2940,22 @@ def _build_matchup_guides_svg(
         lower_teams = [team for team in candidate_teams if int(team["row"]) > match_row][:2]
         nearby_teams = sorted(upper_teams + lower_teams, key=lambda team: int(team["row"]))
         if len(nearby_teams) < 2:
-            continue
+            # Fallback: match may receive seeds directly (e.g., c5/c6/c7 match 49)
+            seed_candidates = sorted(
+                [
+                    n
+                    for n in nodes
+                    if n["class"] in {"seed", "seed-between"}
+                    and abs(int(n["row"]) - match_row) <= 8
+                    and (legend_start_row is None or int(n["row"]) < legend_start_row)
+                ],
+                key=lambda n: int(n["row"]),
+            )
+            upper_seeds = [n for n in seed_candidates if int(n["row"]) <= match_row][-2:]
+            lower_seeds = [n for n in seed_candidates if int(n["row"]) > match_row][:2]
+            nearby_teams = sorted(upper_seeds + lower_seeds, key=lambda n: int(n["row"]))
+            if len(nearby_teams) < 2:
+                continue
 
         # Find seeds on the same rows as teams
         team_rows = {int(t["row"]) for t in nearby_teams}
