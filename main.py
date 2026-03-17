@@ -2232,12 +2232,6 @@ def _align_match_nodes(
                 continue
             match_nodes_by_number[str(node["text"]).strip()] = node
 
-        match_49 = match_nodes_by_number.get("49")
-        center_2a = seed_centers.get("2° A")
-        center_1b = seed_centers.get("1° B")
-        if match_49 is not None and center_2a is not None and center_1b is not None:
-            match_49["y"] = round((center_2a + center_1b) / 2) - 12
-
         for target in range(50, 56):
             feeder_a = str(34 + (target - 50) * 2)
             feeder_b = str(35 + (target - 50) * 2)
@@ -2946,7 +2940,6 @@ def _build_matchup_guides_svg(
     guides: List[str] = []
     for match in first_round_matches:
         match_row = int(match["row"])
-        match_number = str(match["text"]).strip()
         candidate_teams = sorted(
             [team for team in teams if abs(int(team["row"]) - match_row) <= 8],
             key=lambda team: int(team["row"]),
@@ -2954,25 +2947,6 @@ def _build_matchup_guides_svg(
         upper_teams = [team for team in candidate_teams if int(team["row"]) <= match_row][-2:]
         lower_teams = [team for team in candidate_teams if int(team["row"]) > match_row][:2]
         nearby_participants = sorted(upper_teams + lower_teams, key=lambda team: int(team["row"]))
-
-        if (
-            (category or "").lower().startswith(("c5", "c6", "c7"))
-            and (category or "").lower() not in {"c5 40", "c6 35", "c6 40", "c7 40"}
-            and match_number == "49"
-        ):
-            forced_seed_labels = {"2° A", "1° B"}
-            forced_seed_nodes = sorted(
-                [
-                    node
-                    for node in nodes
-                    if node["class"] in {"seed", "seed-between"}
-                    and str(node["text"]).strip() in forced_seed_labels
-                    and (legend_start_row is None or int(node["row"]) < legend_start_row)
-                ],
-                key=lambda node: int(node["row"]),
-            )
-            if len(forced_seed_nodes) >= 2:
-                nearby_participants = forced_seed_nodes[:2]
 
         if len(nearby_participants) < 2:
             candidate_seeds = sorted(
