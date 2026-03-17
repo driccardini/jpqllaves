@@ -243,7 +243,7 @@ def _build_connectors(
         default_x = int(right_node["x"]) + 88
         category_key = (category or "").lower()
 
-        if category_key in {"d5", "d6", "d7"}:
+        if category_key in {"d4", "d5", "d6", "d7"}:
             return int(right_node["x"]) - 12
 
         if category_key != "c3":
@@ -662,6 +662,69 @@ def _build_connectors(
         append_direct_connector("1° A", "57")
         append_direct_connector("1° D", "58")
         append_direct_connector("1° C", "59")
+        append_direct_connector("1° B", "60")
+
+    if (category or "").lower() == "d4":
+        def find_direct_anchor(seed_label: str) -> Optional[tuple[int, int]]:
+            seed_text = seed_label.strip()
+            seed_node = next(
+                (
+                    node
+                    for node in nodes
+                    if node["class"] in {"seed", "seed-between"}
+                    and str(node["text"]).strip() == seed_text
+                ),
+                None,
+            )
+            if seed_node is None:
+                return None
+
+            seed_col = int(seed_node["col"])
+            seed_row = int(seed_node["row"])
+            paired_teams = sorted(
+                [
+                    node
+                    for node in nodes
+                    if node["class"] == "team"
+                    and int(node["col"]) == seed_col + 1
+                    and int(node["row"]) in {seed_row, seed_row + 1}
+                ],
+                key=lambda node: int(node["row"]),
+            )
+            if not paired_teams:
+                return None
+
+            x = int(paired_teams[0]["x"])
+            if len(paired_teams) >= 2:
+                y = (int(paired_teams[0]["y"]) + int(paired_teams[1]["y"])) // 2 + 12
+            else:
+                y = int(paired_teams[0]["y"]) + 12
+            return x, y
+
+        def append_direct_connector(seed_label: str, target_number: str) -> None:
+            anchor = find_direct_anchor(seed_label)
+            target_node = next(
+                (
+                    node
+                    for node in nodes
+                    if node["class"] == "match-id" and str(node["text"]).strip() == target_number
+                ),
+                None,
+            )
+            if anchor is None or target_node is None:
+                return
+
+            x1 = anchor[0] + 78
+            y1 = anchor[1]
+            x2 = int(target_node["x"]) - 4
+            y2 = int(target_node["y"]) + 12
+            connector_paths.append(route(x1, y1, x2, y2))
+
+        append_direct_connector("1° A", "57")
+        append_direct_connector("1° E", "58")
+        append_direct_connector("1° D", "58")
+        append_direct_connector("1° C", "59")
+        append_direct_connector("2° E", "59")
         append_direct_connector("1° B", "60")
 
     if (category or "").lower() == "d6":
@@ -1110,6 +1173,46 @@ def _compute_connector_pairs(
         for left_number, right_number in explicit_d5_pairs:
             connect_by_number(left_number, right_number)
 
+    if (category or "").lower() == "d4":
+        match_nodes_by_number: Dict[str, List[Dict[str, object]]] = {}
+        for node in match_nodes:
+            match_nodes_by_number.setdefault(str(node["text"]).strip(), []).append(node)
+
+        for key in match_nodes_by_number:
+            match_nodes_by_number[key].sort(key=lambda item: int(item["row"]))
+
+        connector_pairs = []
+        used_left_by_number: Dict[str, int] = {}
+
+        def connect_by_number(left_number: str, right_number: str) -> None:
+            left_candidates = match_nodes_by_number.get(left_number, [])
+            right_candidates = match_nodes_by_number.get(right_number, [])
+            if not left_candidates or not right_candidates:
+                return
+
+            left_index = used_left_by_number.get(left_number, 0)
+            if left_index >= len(left_candidates):
+                left_index = len(left_candidates) - 1
+
+            left_node = left_candidates[left_index]
+            right_node = right_candidates[0]
+            used_left_by_number[left_number] = left_index + 1
+            connector_pairs.append((left_node, right_node))
+
+        explicit_d4_pairs = [
+            ("50", "57"),
+            ("55", "60"),
+            ("57", "61"),
+            ("58", "61"),
+            ("59", "62"),
+            ("60", "62"),
+            ("61", "64"),
+            ("62", "64"),
+        ]
+
+        for left_number, right_number in explicit_d4_pairs:
+            connect_by_number(left_number, right_number)
+
     if (category or "").lower() == "d6":
         match_nodes_by_number: Dict[str, List[Dict[str, object]]] = {}
         for node in match_nodes:
@@ -1470,6 +1573,103 @@ def _align_match_nodes(
             if target_node is None or center_a is None or center_b is None:
                 continue
             target_node["y"] = round((center_a + center_b) / 2) - 12
+
+    if (category or "").lower() == "d4":
+        seed_centers: Dict[str, int] = {}
+        for node in nodes:
+            if node["class"] not in {"seed", "seed-between"}:
+                continue
+            if legend_start_row is not None and int(node["row"]) >= legend_start_row:
+                continue
+            seed_centers[str(node["text"]).strip()] = int(node["y"]) + 12
+
+        match_nodes_by_number: Dict[str, Dict[str, object]] = {}
+        for node in nodes:
+            if node["class"] != "match-id":
+                continue
+            if legend_start_row is not None and int(node["row"]) >= legend_start_row:
+                continue
+            match_nodes_by_number[str(node["text"]).strip()] = node
+
+        def find_d4_playing_pair_center(target_node: Dict[str, object]) -> Optional[int]:
+            target_row = int(target_node["row"])
+            target_x = int(target_node["x"])
+            nearby_teams = sorted(
+                [
+                    node
+                    for node in nodes
+                    if node["class"] == "team"
+                    and (legend_start_row is None or int(node["row"]) < legend_start_row)
+                    and abs(int(node["row"]) - target_row) <= 10
+                    and abs(int(node["x"]) - target_x) <= 180
+                ],
+                key=lambda node: int(node["row"]),
+            )
+            if len(nearby_teams) < 2:
+                return None
+
+            best_center: Optional[int] = None
+            best_score: Optional[float] = None
+            for idx in range(len(nearby_teams) - 1):
+                top_team = nearby_teams[idx]
+                bottom_team = nearby_teams[idx + 1]
+                row_gap = abs(int(bottom_team["row"]) - int(top_team["row"]))
+                if row_gap > 2:
+                    continue
+
+                center_y = round((int(top_team["y"]) + int(bottom_team["y"])) / 2) + 12
+                center_row = (int(top_team["row"]) + int(bottom_team["row"])) / 2
+                avg_x = (int(top_team["x"]) + int(bottom_team["x"])) / 2
+                score = abs(center_row - target_row) + (abs(avg_x - target_x) / 200)
+                if best_score is None or score < best_score:
+                    best_score = score
+                    best_center = center_y
+
+            return best_center
+
+        for match_number in {"50", "55"}:
+            target_node = match_nodes_by_number.get(match_number)
+            if target_node is None:
+                continue
+            direct_center = find_d4_playing_pair_center(target_node)
+            if direct_center is not None:
+                target_node["y"] = direct_center - 12
+
+        match_50 = match_nodes_by_number.get("50")
+        center_2b = seed_centers.get("2° B")
+        center_2c = seed_centers.get("2° C")
+        if match_50 is not None and center_2b is not None and center_2c is not None:
+            match_50["y"] = round((center_2b + center_2c) / 2) - 12
+
+        match_55 = match_nodes_by_number.get("55")
+        center_2d = seed_centers.get("2° D")
+        center_2a = seed_centers.get("2° A")
+        if match_55 is not None and center_2d is not None and center_2a is not None:
+            match_55["y"] = round((center_2d + center_2a) / 2) - 12
+
+        match_57 = match_nodes_by_number.get("57")
+        center_1a = seed_centers.get("1° A")
+        if match_57 is not None and match_50 is not None and center_1a is not None:
+            center_50 = int(match_50["y"]) + 12
+            match_57["y"] = round((center_1a + center_50) / 2) - 12
+
+        match_58 = match_nodes_by_number.get("58")
+        center_1e = seed_centers.get("1° E")
+        center_1d = seed_centers.get("1° D")
+        if match_58 is not None and center_1e is not None and center_1d is not None:
+            match_58["y"] = round((center_1e + center_1d) / 2) - 12
+
+        match_59 = match_nodes_by_number.get("59")
+        center_1c = seed_centers.get("1° C")
+        center_2e = seed_centers.get("2° E")
+        if match_59 is not None and center_1c is not None and center_2e is not None:
+            match_59["y"] = round((center_1c + center_2e) / 2) - 12
+
+        match_60 = match_nodes_by_number.get("60")
+        center_1b = seed_centers.get("1° B")
+        if match_60 is not None and match_55 is not None and center_1b is not None:
+            center_55 = int(match_55["y"]) + 12
+            match_60["y"] = round((center_1b + center_55) / 2) - 12
 
     if (category or "").lower().startswith(("c5", "c6", "c7")):
         match_nodes_by_number: Dict[str, Dict[str, object]] = {}
@@ -2264,7 +2464,7 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
       }}
       .node.team {{
                 border: 1px solid rgba(255, 255, 255, 0.16);
-                background: rgba(255, 255, 255, 0.06);
+                background: rgba(21, 28, 42, 0.94);
                 color: #f2f6ff;
       }}
       .node.seed {{
@@ -2274,7 +2474,7 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
                                 font-weight: 700;
                                 border: 1px solid rgba(214, 183, 99, 0.52);
                                 color: #f8df95;
-                                background: rgba(214, 183, 99, 0.13);
+                                                                background: rgba(64, 52, 20, 0.92);
                         min-width: unset;
                         max-width: unset;
                         padding: 2px 7px;
@@ -2283,7 +2483,7 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
         font-weight: 700;
                                 border: 1px solid rgba(92, 147, 255, 0.62);
                                 color: #8db7ff;
-                                background: rgba(92, 147, 255, 0.14);
+                                                                background: rgba(16, 40, 82, 0.92);
       }}
       .node.cat-title {{
                 font-weight: 800;
