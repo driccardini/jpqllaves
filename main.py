@@ -336,6 +336,9 @@ def _build_connectors(
 
             x1 = anchor[0] + 78
             y1 = anchor[1]
+            target_left_x = int(target_node["x"]) - 12
+            target_right_x = int(target_node["x"]) + 88
+            x2 = target_right_x if target_right_x <= x1 + 18 else target_left_x
             y2 = int(target_node["y"]) + 12
 
             if (
@@ -343,7 +346,7 @@ def _build_connectors(
                 and target_number == "57"
                 and "57" in c3_shared_trunk_x_by_target
             ):
-                x2 = int(target_node["x"]) - 12
+                x2 = target_left_x
                 x1_left = int(anchor[0]) - 16
                 connector_paths.append(f"M{x1_left},{y1} H{x2} V{y2}")
                 return
@@ -353,7 +356,7 @@ def _build_connectors(
                 and target_number == "59"
                 and "59" in c3_shared_trunk_x_by_target
             ):
-                x2 = int(target_node["x"]) - 12
+                x2 = target_left_x
                 x1_left = int(anchor[0]) - 16
                 connector_paths.append(f"M{x1_left},{y1} H{x2} V{y2}")
                 return
@@ -363,12 +366,11 @@ def _build_connectors(
                 and target_number == "60"
                 and "60" in c3_shared_trunk_x_by_target
             ):
-                x2 = int(target_node["x"]) - 12
+                x2 = target_left_x
                 x1_left = int(anchor[0]) - 16
                 connector_paths.append(f"M{x1_left},{y1} H{x2} V{y2}")
                 return
 
-            x2 = int(target_node["x"]) - 12
             connector_paths.append(route(x1, y1, x2, y2))
 
         append_direct_connector("9°", "50")
