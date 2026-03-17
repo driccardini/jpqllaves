@@ -3145,14 +3145,16 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
         watermark_html = f'<div class="bracket-watermark"><img src="{logo_watermark_data_uri}" alt="Logo JPQ" /></div>'
 
     category_key = (category or "").lower()
-    if category_key == "c2":
-        watermark_width_css = "80%"
-        watermark_height_css = "80%"
+    if category_key in {"c2", "c3"}:
+        watermark_width_css = "100%"
+        watermark_height_css = "100%"
         watermark_fit_css = "cover"
+        watermark_opacity_css = "0.16"
     else:
         watermark_width_css = f"min(92%, {width - 40}px)"
         watermark_height_css = f"min(92%, {board_height - 40}px)"
         watermark_fit_css = "contain"
+        watermark_opacity_css = "0.08"
 
 
     html = f"""<!DOCTYPE html>
@@ -3194,7 +3196,7 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
                 width: {watermark_width_css};
                 height: {watermark_height_css};
                 object-fit: {watermark_fit_css};
-                opacity: 0.08;
+                opacity: {watermark_opacity_css};
             }}
             .bracket-viewport {{
                 position: relative;
