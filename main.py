@@ -147,6 +147,12 @@ def _build_connectors(
         if node["class"] == "match-id"
         and (legend_start_row is None or int(node["row"]) < legend_start_row)
     ]
+    team_nodes = [
+        node
+        for node in nodes
+        if node["class"] == "team"
+        and (legend_start_row is None or int(node["row"]) < legend_start_row)
+    ]
 
     if len(match_nodes) < 2:
         return ""
@@ -179,14 +185,37 @@ def _build_connectors(
         if not right_nodes:
             continue
 
-        left_count = len(left_nodes)
-        right_count = len(right_nodes)
+        capacities: List[int] = []
+        for right_node in right_nodes:
+            right_col = int(right_node["col"])
+            right_row = int(right_node["row"])
+            nearby_direct_team_rows = [
+                team
+                for team in team_nodes
+                if int(team["col"]) == right_col and abs(int(team["row"]) - right_row) <= 8
+            ]
+            direct_pairs = len(nearby_direct_team_rows) // 2
+            incoming_needed = max(0, 2 - direct_pairs)
+            capacities.append(incoming_needed)
 
-        for right_idx, right_node in enumerate(right_nodes):
-            start_idx = round(right_idx * left_count / right_count)
-            end_idx = round((right_idx + 1) * left_count / right_count)
-            for left_node in left_nodes[start_idx:end_idx]:
-                connect(left_node, right_node)
+        total_incoming_needed = sum(capacities)
+
+        if total_incoming_needed == len(left_nodes):
+            left_idx = 0
+            for right_node, incoming_needed in zip(right_nodes, capacities):
+                for _ in range(incoming_needed):
+                    if left_idx >= len(left_nodes):
+                        break
+                    connect(left_nodes[left_idx], right_node)
+                    left_idx += 1
+        else:
+            left_count = len(left_nodes)
+            right_count = len(right_nodes)
+            for right_idx, right_node in enumerate(right_nodes):
+                start_idx = round(right_idx * left_count / right_count)
+                end_idx = round((right_idx + 1) * left_count / right_count)
+                for left_node in left_nodes[start_idx:end_idx]:
+                    connect(left_node, right_node)
 
     return "".join(
         f'<path d="{path}" class="connector"></path>' for path in connector_paths
