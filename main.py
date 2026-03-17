@@ -2909,7 +2909,7 @@ def _build_matchup_guides_svg(
     nodes: List[Dict[str, object]],
     category: Optional[str] = None,
 ) -> str:
-    if (category or "").lower() == "c6 40":
+    if (category or "").lower() in {"c6 40", "c7 40"}:
         return ""
 
     matches = [
