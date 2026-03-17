@@ -159,6 +159,29 @@ def _build_connectors(
     board_rows: int,
     category: Optional[str] = None,
 ) -> str:
+    connector_pairs = _compute_connector_pairs(nodes=nodes, category=category)
+
+    def route(x1: int, y1: int, x2: int, y2: int) -> str:
+        mid_x = x1 + max(14, (x2 - x1) // 2)
+        return f"M{x1},{y1} H{mid_x} V{y2} H{x2}"
+
+    connector_paths: List[str] = []
+    for left_node, right_node in connector_pairs:
+        x1 = int(left_node["x"]) + 78
+        y1 = int(left_node["y"]) + 12
+        x2 = int(right_node["x"]) - 4
+        y2 = int(right_node["y"]) + 12
+        connector_paths.append(route(x1, y1, x2, y2))
+
+    return "".join(
+        f'<path d="{path}" class="connector"></path>' for path in connector_paths
+    )
+
+
+def _compute_connector_pairs(
+    nodes: List[Dict[str, object]],
+    category: Optional[str] = None,
+) -> List[tuple[Dict[str, object], Dict[str, object]]]:
     legend_rows = [int(node["row"]) for node in nodes if node["class"] == "legend"]
     legend_start_row = min(legend_rows) if legend_rows else None
 
@@ -176,7 +199,7 @@ def _build_connectors(
     ]
 
     if len(match_nodes) < 2:
-        return ""
+        return []
 
     stage_map: Dict[int, List[Dict[str, object]]] = {}
     for node in match_nodes:
@@ -190,10 +213,6 @@ def _build_connectors(
 
     sorted_stages = sorted(stage_map.keys())
     connector_pairs: List[tuple[Dict[str, object], Dict[str, object]]] = []
-
-    def route(x1: int, y1: int, x2: int, y2: int) -> str:
-        mid_x = x1 + max(14, (x2 - x1) // 2)
-        return f"M{x1},{y1} H{mid_x} V{y2} H{x2}"
 
     def connect(left_node: Dict[str, object], right_node: Dict[str, object]) -> None:
         connector_pairs.append((left_node, right_node))
@@ -281,17 +300,7 @@ def _build_connectors(
         force_pair("61", "64")
         force_pair("62", "64")
 
-    connector_paths: List[str] = []
-    for left_node, right_node in connector_pairs:
-        x1 = int(left_node["x"]) + 78
-        y1 = int(left_node["y"]) + 12
-        x2 = int(right_node["x"]) - 4
-        y2 = int(right_node["y"]) + 12
-        connector_paths.append(route(x1, y1, x2, y2))
-
-    return "".join(
-        f'<path d="{path}" class="connector"></path>' for path in connector_paths
-    )
+    return connector_pairs
 
 
 def _build_round_labels(nodes: List[Dict[str, object]]) -> str:
@@ -330,76 +339,64 @@ def _build_round_labels(nodes: List[Dict[str, object]]) -> str:
     return "".join(labels)
 
 
-def _build_matchups_html(nodes: List[Dict[str, object]]) -> str:
-    legend_rows = [int(node["row"]) for node in nodes if node["class"] == "legend"]
-    legend_start_row = min(legend_rows) if legend_rows else None
-
-    teams = [
-        node
-        for node in nodes
-        if node["class"] == "team"
-        and (legend_start_row is None or int(node["row"]) < legend_start_row)
-    ]
-    matches = [
-        node
-        for node in nodes
-        if node["class"] == "match-id"
-        and (legend_start_row is None or int(node["row"]) < legend_start_row)
-    ]
-
-    if not matches or not teams:
+def _build_matchups_html(nodes: List[Dict[str, object]], category: Optional[str] = None) -> str:
+    connector_pairs = _compute_connector_pairs(nodes=nodes, category=category)
+    if not connector_pairs:
         return ""
 
-    first_round_col = min(int(node["col"]) for node in matches)
-    matches = sorted(
-        [node for node in matches if int(node["col"]) == first_round_col],
-        key=lambda node: int(node["row"]),
-    )
-    items: List[str] = []
+    stage_titles = {1: "8vos", 2: "4tos", 3: "Semi", 4: "Final"}
+    grouped: Dict[str, Dict[str, object]] = {}
 
-    for match in matches:
-        match_row = int(match["row"])
-        match_number = str(match["text"])
-
-        nearby = [
-            team
-            for team in teams
-            if int(team["col"]) == first_round_col
-            and abs(int(team["row"]) - match_row) <= 9
-        ]
-        nearby = sorted(
-            nearby,
-            key=lambda team: (abs(int(team["row"]) - match_row), int(team["row"])),
-        )
-
-        selected = nearby[:4]
-        if not selected:
+    for left_node, right_node in connector_pairs:
+        right_text = str(right_node["text"])
+        stage = _match_stage(right_text)
+        if stage is None or stage == 0:
             continue
-
-        selected = sorted(selected, key=lambda team: int(team["row"]))
-        names = [escape(str(team["text"])) for team in selected]
-
-        if len(names) >= 4:
-            pair_a = f"{names[0]} / {names[1]}"
-            pair_b = f"{names[2]} / {names[3]}"
-        elif len(names) == 3:
-            pair_a = f"{names[0]} / {names[1]}"
-            pair_b = names[2]
-        elif len(names) == 2:
-            pair_a = names[0]
-            pair_b = names[1]
-        else:
-            pair_a = names[0]
-            pair_b = "-"
-
-        items.append(
-            f'<div class="matchup-item"><span class="matchup-num">#{escape(match_number)}</span><span class="matchup-pairs">{pair_a} <b>vs</b> {pair_b}</span></div>'
+        key = f"{stage}:{right_text}:{int(right_node['row'])}"
+        entry = grouped.setdefault(
+            key,
+            {
+                "stage": stage,
+                "target": right_text,
+                "target_row": int(right_node["row"]),
+                "sources": [],
+            },
         )
+        source_text = str(left_node["text"])
+        if source_text not in entry["sources"]:
+            entry["sources"].append(source_text)
 
-    if not items:
+    if not grouped:
         return ""
 
-    return f'<div class="matchups-box"><div class="matchups-title">Cruces de la etapa</div>{"".join(items)}</div>'
+    sections: Dict[int, List[str]] = {}
+    for entry in sorted(grouped.values(), key=lambda item: (int(item["stage"]), int(item["target_row"]))):
+        stage = int(entry["stage"])
+        target = escape(str(entry["target"]))
+        sources = [escape(src) for src in entry["sources"]]
+        if len(sources) >= 2:
+            pair_text = f"#{sources[0]} <span>vs</span> #{sources[1]}"
+        elif len(sources) == 1:
+            pair_text = f"#{sources[0]} <span>vs</span> ingreso directo"
+        else:
+            pair_text = "por definir"
+
+        item_html = (
+            f'<div class="stage-matchup-item">'
+            f'<div class="stage-matchup-head">Partido #{target}</div>'
+            f'<div class="stage-matchup-pair">{pair_text}</div>'
+            f'</div>'
+        )
+        sections.setdefault(stage, []).append(item_html)
+
+    html_sections: List[str] = []
+    for stage in sorted(sections):
+        title = stage_titles.get(stage, f"Ronda {stage}")
+        html_sections.append(
+            f'<div class="stage-matchups-group"><div class="stage-matchups-title">{escape(title)}</div><div class="stage-matchups-grid">{"".join(sections[stage])}</div></div>'
+        )
+
+    return f'<div class="matchups-box"><div class="matchups-title">Cruces claros</div>{"".join(html_sections)}</div>'
 
 
 def _build_matchup_guides_svg(nodes: List[Dict[str, object]]) -> str:
@@ -564,7 +561,7 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
     connectors_svg = _build_connectors(nodes=node_data, board_rows=rows, category=category)
     matchup_guides_svg = _build_matchup_guides_svg(nodes=node_data)
     round_labels_html = _build_round_labels(nodes=node_data)
-    matchups_html = _build_matchups_html(nodes=node_data)
+    matchups_html = _build_matchups_html(nodes=node_data, category=category)
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -704,10 +701,49 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
             .matchup-pairs {{
                 color: #e8edf9;
             }}
+            .stage-matchups-group {{
+                margin-top: 10px;
+            }}
+            .stage-matchups-title {{
+                font-size: 0.82rem;
+                font-weight: 800;
+                color: #f3d47a;
+                margin-bottom: 8px;
+                letter-spacing: 0.2px;
+            }}
+            .stage-matchups-grid {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                gap: 8px;
+            }}
+            .stage-matchup-item {{
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                background: rgba(255, 255, 255, 0.04);
+                border-radius: 10px;
+                padding: 8px 10px;
+            }}
+            .stage-matchup-head {{
+                color: #9fc0ff;
+                font-size: 0.78rem;
+                font-weight: 800;
+                margin-bottom: 4px;
+            }}
+            .stage-matchup-pair {{
+                color: #e8edf9;
+                font-size: 0.83rem;
+                line-height: 1.25;
+            }}
+            .stage-matchup-pair span {{
+                color: #f3d47a;
+                font-weight: 700;
+            }}
             @media (max-width: 768px) {{
                 .bracket-wrap {{
                     padding: 6px;
                     border-radius: 12px;
+                }}
+                .stage-matchups-grid {{
+                    grid-template-columns: 1fr;
                 }}
             }}
     </style>
