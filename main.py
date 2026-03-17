@@ -3146,8 +3146,8 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
 
     category_key = (category or "").lower()
     if category_key == "c2":
-        watermark_width_css = "100%"
-        watermark_height_css = "100%"
+        watermark_width_css = "80%"
+        watermark_height_css = "80%"
         watermark_fit_css = "cover"
     else:
         watermark_width_css = f"min(92%, {width - 40}px)"
