@@ -3144,17 +3144,10 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
     if logo_watermark_data_uri:
         watermark_html = f'<div class="bracket-watermark"><img src="{logo_watermark_data_uri}" alt="Logo JPQ" /></div>'
 
-    category_key = (category or "").lower()
-    if category_key in {"c2", "c3"}:
-        watermark_width_css = "100%"
-        watermark_height_css = "100%"
-        watermark_fit_css = "cover"
-        watermark_opacity_css = "0.16"
-    else:
-        watermark_width_css = f"min(92%, {width - 40}px)"
-        watermark_height_css = f"min(92%, {board_height - 40}px)"
-        watermark_fit_css = "contain"
-        watermark_opacity_css = "0.08"
+    watermark_width_css = "100%"
+    watermark_height_css = "100%"
+    watermark_fit_css = "cover"
+    watermark_opacity_css = "0.16"
 
 
     html = f"""<!DOCTYPE html>
