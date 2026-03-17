@@ -222,9 +222,80 @@ def _build_connectors(
     for left_node, right_node in connector_pairs:
         x1 = int(left_node["x"]) + 78
         y1 = int(left_node["y"]) + 12
-        x2 = int(right_node["x"]) - 4
+        x2 = int(right_node["x"]) + 88
         y2 = int(right_node["y"]) + 12
         connector_paths.append(route(x1, y1, x2, y2))
+
+    if (category or "").lower() == "c2":
+        def find_direct_anchor(seed_label: str) -> Optional[tuple[int, int]]:
+            seed_text = seed_label.strip()
+            seed_node = next(
+                (
+                    node
+                    for node in nodes
+                    if node["class"] in {"seed", "seed-between"}
+                    and str(node["text"]).strip() == seed_text
+                ),
+                None,
+            )
+            if seed_node is None:
+                return None
+
+            seed_col = int(seed_node["col"])
+            seed_row = int(seed_node["row"])
+            paired_teams = sorted(
+                [
+                    node
+                    for node in nodes
+                    if node["class"] == "team"
+                    and int(node["col"]) == seed_col + 1
+                    and int(node["row"]) in {seed_row, seed_row + 1}
+                ],
+                key=lambda node: int(node["row"]),
+            )
+            if not paired_teams:
+                return None
+
+            x = int(paired_teams[0]["x"])
+            if len(paired_teams) >= 2:
+                y = (int(paired_teams[0]["y"]) + int(paired_teams[1]["y"])) // 2 + 12
+            else:
+                y = int(paired_teams[0]["y"]) + 12
+            return x, y
+
+        def append_direct_connector(seed_label: str, target_number: str) -> None:
+            anchor = find_direct_anchor(seed_label)
+            target_node = next(
+                (
+                    node
+                    for node in nodes
+                    if node["class"] == "match-id" and str(node["text"]) == target_number
+                ),
+                None,
+            )
+            if anchor is None or target_node is None:
+                return
+
+            x1 = anchor[0] + 78
+            y1 = anchor[1]
+            x2 = int(target_node["x"]) + 88
+            y2 = int(target_node["y"]) + 12
+            connector_paths.append(route(x1, y1, x2, y2))
+
+        append_direct_connector("9°", "50")
+        append_direct_connector("8°", "50")
+        append_direct_connector("5°", "51")
+        append_direct_connector("12°", "51")
+        append_direct_connector("13°", "52")
+        append_direct_connector("4°", "52")
+        append_direct_connector("3°", "53")
+        append_direct_connector("14°", "53")
+        append_direct_connector("11°", "54")
+        append_direct_connector("6°", "54")
+        append_direct_connector("7°", "55")
+        append_direct_connector("10°", "55")
+        append_direct_connector("15°", "56")
+        append_direct_connector("2°", "56")
 
     if (category or "").lower() == "c4":
         def find_direct_anchor(seed_label: str) -> Optional[tuple[int, int]]:
@@ -368,6 +439,53 @@ def _compute_connector_pairs(
                 end_idx = round((right_idx + 1) * left_count / right_count)
                 for left_node in left_nodes[start_idx:end_idx]:
                     connect(left_node, right_node)
+
+    if (category or "").lower() == "c2":
+        match_nodes_by_number: Dict[str, List[Dict[str, object]]] = {}
+        for node in match_nodes:
+            match_nodes_by_number.setdefault(str(node["text"]), []).append(node)
+
+        for key in match_nodes_by_number:
+            match_nodes_by_number[key].sort(key=lambda item: int(item["row"]))
+
+        connector_pairs = []
+        used_left_by_number: Dict[str, int] = {}
+
+        def connect_by_number(left_number: str, right_number: str) -> None:
+            left_candidates = match_nodes_by_number.get(left_number, [])
+            right_candidates = match_nodes_by_number.get(right_number, [])
+            if not left_candidates or not right_candidates:
+                return
+
+            left_index = used_left_by_number.get(left_number, 0)
+            if left_index >= len(left_candidates):
+                left_index = len(left_candidates) - 1
+
+            left_node = left_candidates[left_index]
+            right_node = right_candidates[0]
+            used_left_by_number[left_number] = left_index + 1
+            connector_pairs.append((left_node, right_node))
+
+        explicit_c2_pairs = [
+            ("34", "49"),
+            ("49", "57"),
+            ("50", "57"),
+            ("51", "58"),
+            ("52", "58"),
+            ("57", "61"),
+            ("58", "61"),
+            ("53", "59"),
+            ("54", "59"),
+            ("55", "60"),
+            ("56", "60"),
+            ("59", "62"),
+            ("60", "62"),
+            ("61", "64"),
+            ("62", "64"),
+        ]
+
+        for left_number, right_number in explicit_c2_pairs:
+            connect_by_number(left_number, right_number)
 
     if (category or "").lower() == "c4":
         match_nodes_by_number: Dict[str, List[Dict[str, object]]] = {}
@@ -551,6 +669,46 @@ def _align_match_nodes(
 
             aligned_center = round(sum(candidate_centers) / len(candidate_centers))
             target_node["y"] = aligned_center - 12
+
+    if (category or "").lower() == "c2":
+        seed_centers: Dict[str, int] = {}
+        for node in nodes:
+            if node["class"] not in {"seed", "seed-between"}:
+                continue
+            if legend_start_row is not None and int(node["row"]) >= legend_start_row:
+                continue
+            seed_centers[str(node["text"]).strip()] = int(node["y"]) + 12
+
+        c2_seed_pairs = {
+            "50": ("9°", "8°"),
+            "51": ("5°", "12°"),
+            "52": ("13°", "4°"),
+            "53": ("3°", "14°"),
+            "54": ("11°", "6°"),
+            "55": ("7°", "10°"),
+            "56": ("15°", "2°"),
+        }
+
+        for match_number, (seed_a, seed_b) in c2_seed_pairs.items():
+            target_node = next(
+                (
+                    node
+                    for node in nodes
+                    if node["class"] == "match-id"
+                    and str(node["text"]).strip() == match_number
+                    and (legend_start_row is None or int(node["row"]) < legend_start_row)
+                ),
+                None,
+            )
+            if target_node is None:
+                continue
+
+            center_a = seed_centers.get(seed_a)
+            center_b = seed_centers.get(seed_b)
+            if center_a is None or center_b is None:
+                continue
+
+            target_node["y"] = round((center_a + center_b) / 2) - 12
 
 
 def _build_round_labels(nodes: List[Dict[str, object]], category: Optional[str] = None) -> str:
