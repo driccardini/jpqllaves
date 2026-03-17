@@ -3139,6 +3139,11 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
 
     connectors_svg = _build_connectors(nodes=node_data, board_rows=rows, category=category)
     matchup_guides_svg = _build_matchup_guides_svg(nodes=node_data, category=category)
+    logo_watermark_data_uri = load_logo_data_uri()
+    watermark_html = ""
+    if logo_watermark_data_uri:
+        watermark_html = f'<div class="bracket-watermark"><img src="{logo_watermark_data_uri}" alt="Logo JPQ" /></div>'
+
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -3163,6 +3168,24 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
                 height: {board_height}px;
         transform-origin: top left;
       }}
+            .bracket-watermark {{
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: -1;
+                pointer-events: none;
+            }}
+            .bracket-watermark img {{
+                width: 100%;
+                height: 100%;
+                object-fit: contain;
+                opacity: 0.08;
+            }}
             .bracket-viewport {{
                 position: relative;
                 overflow: auto;
@@ -3398,6 +3421,7 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
                         </div>
             <div class="bracket-viewport">
                 <div class="bracket-board">
+                                                                        {watermark_html}
                                     <svg class="bracket-lines" width="{width}" height="{height}">
                                           {matchup_guides_svg}
                                             {connectors_svg}
