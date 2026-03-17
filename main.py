@@ -1,8 +1,10 @@
 from pathlib import Path
 from html import escape
 import base64
+from io import BytesIO
 import textwrap
 from typing import Dict, List, Optional
+from urllib.request import urlopen
 
 import pandas as pd
 import streamlit as st
@@ -10,6 +12,7 @@ import streamlit.components.v1 as components
 
 
 DATA_DIR = Path(__file__).parent / "LLAVES 1er JPQ"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1kiw5oIs3dw5yj2ME26tHoJ7Y5_TEvqYBnxHoDVeoi_4/export?format=xlsx"
 LOGO_GLOB = "Logo JPQ*"
 CELL_WIDTH = 132
 CELL_HEIGHT = 26
@@ -75,10 +78,55 @@ def _find_data_sheet(sheet_names: List[str]) -> Optional[str]:
 
 
 @st.cache_data(show_spinner=False)
-def load_brackets(data_dir: Path) -> Dict[str, Dict[str, object]]:
+def load_brackets() -> Dict[str, Dict[str, object]]:
     brackets: Dict[str, Dict[str, object]] = {}
 
-    for file_path in sorted(data_dir.glob("*.xlsx")):
+    try:
+        workbook_bytes = urlopen(SHEET_URL).read()
+        excel_file = pd.ExcelFile(BytesIO(workbook_bytes))
+
+        for sheet_name in excel_file.sheet_names:
+            if sheet_name.lower().startswith("base"):
+                continue
+
+            bracket_df = pd.read_excel(BytesIO(workbook_bytes), sheet_name=sheet_name, header=None)
+
+            first_used_row: Optional[int] = None
+            first_used_col: Optional[int] = None
+            last_used_row = 0
+            last_used_col = 0
+            for row_idx in range(bracket_df.shape[0]):
+                for col_idx in range(bracket_df.shape[1]):
+                    value = bracket_df.iat[row_idx, col_idx]
+                    if pd.notna(value) and str(value).strip() != "":
+                        if first_used_row is None:
+                            first_used_row = row_idx
+                        else:
+                            first_used_row = min(first_used_row, row_idx)
+                        if first_used_col is None:
+                            first_used_col = col_idx
+                        else:
+                            first_used_col = min(first_used_col, col_idx)
+                        last_used_row = max(last_used_row, row_idx)
+                        last_used_col = max(last_used_col, col_idx)
+
+            if first_used_row is None or first_used_col is None:
+                continue
+
+            cropped = bracket_df.iloc[
+                first_used_row : last_used_row + 1,
+                first_used_col : last_used_col + 1,
+            ].reset_index(drop=True)
+            cropped.columns = range(cropped.shape[1])
+            category = sheet_name.strip()
+            brackets[category] = {"sheet": sheet_name, "grid": cropped}
+
+        if brackets:
+            return brackets
+    except Exception:
+        pass
+
+    for file_path in sorted(DATA_DIR.glob("*.xlsx")):
         category = file_path.stem
         excel_file = pd.ExcelFile(file_path)
         data_sheet = _find_data_sheet(excel_file.sheet_names)
@@ -127,8 +175,13 @@ def _cell_class(value: str) -> str:
     if text.upper() in {"Nº PARTIDO", "DIA - HORA", "COMPLEJO"}:
         return "legend"
     digits = text.replace(".", "", 1)
-    if digits.isdigit() and len(text) <= 3:
-        return "match-id"
+    if digits.isdigit():
+        try:
+            number = int(float(text))
+            if 1 <= number <= 999:
+                return "match-id"
+        except ValueError:
+            pass
     if "°" in text:
         return "seed"
     return "team"
@@ -172,6 +225,62 @@ def _build_connectors(
         x2 = int(right_node["x"]) - 4
         y2 = int(right_node["y"]) + 12
         connector_paths.append(route(x1, y1, x2, y2))
+
+    if (category or "").lower() == "c4":
+        def find_direct_anchor(seed_label: str) -> Optional[tuple[int, int]]:
+            seed_node = next(
+                (node for node in nodes if node["class"] == "seed" and str(node["text"]) == seed_label),
+                None,
+            )
+            if seed_node is None:
+                return None
+
+            seed_col = int(seed_node["col"])
+            seed_row = int(seed_node["row"])
+            paired_teams = sorted(
+                [
+                    node
+                    for node in nodes
+                    if node["class"] == "team"
+                    and int(node["col"]) == seed_col + 1
+                    and int(node["row"]) in {seed_row, seed_row + 1}
+                ],
+                key=lambda node: int(node["row"]),
+            )
+            if not paired_teams:
+                return None
+
+            x = int(paired_teams[0]["x"])
+            if len(paired_teams) >= 2:
+                y = (int(paired_teams[0]["y"]) + int(paired_teams[1]["y"])) // 2 + 12
+            else:
+                y = int(paired_teams[0]["y"]) + 12
+            return x, y
+
+        def append_direct_connector(seed_label: str, target_number: str) -> None:
+            anchor = find_direct_anchor(seed_label)
+            target_node = next(
+                (
+                    node
+                    for node in nodes
+                    if node["class"] == "match-id" and str(node["text"]) == target_number
+                ),
+                None,
+            )
+            if anchor is None or target_node is None:
+                return
+
+            x1 = anchor[0] + 78
+            y1 = anchor[1]
+            x2 = int(target_node["x"]) - 4
+            y2 = int(target_node["y"]) + 12
+            connector_paths.append(route(x1, y1, x2, y2))
+
+        append_direct_connector("1° A", "49")
+        append_direct_connector("1° E", "51")
+        append_direct_connector("1° D", "52")
+        append_direct_connector("1° C", "53")
+        append_direct_connector("1° B", "56")
 
     return "".join(
         f'<path d="{path}" class="connector"></path>' for path in connector_paths
@@ -268,79 +377,183 @@ def _compute_connector_pairs(
         for key in match_nodes_by_number:
             match_nodes_by_number[key].sort(key=lambda item: int(item["row"]))
 
-        def force_pair(left_number: str, right_number: str) -> None:
+        connector_pairs = []
+        used_left_by_number: Dict[str, int] = {}
+
+        def connect_by_number(left_number: str, right_number: str) -> None:
             left_candidates = match_nodes_by_number.get(left_number, [])
             right_candidates = match_nodes_by_number.get(right_number, [])
             if not left_candidates or not right_candidates:
                 return
 
-            left_node = left_candidates[0]
-            right_node = right_candidates[0]
+            left_index = used_left_by_number.get(left_number, 0)
+            if left_index >= len(left_candidates):
+                left_index = len(left_candidates) - 1
 
-            connector_pairs[:] = [
-                (left, right)
-                for left, right in connector_pairs
-                if left is not left_node
-            ]
+            left_node = left_candidates[left_index]
+            right_node = right_candidates[0]
+            used_left_by_number[left_number] = left_index + 1
             connector_pairs.append((left_node, right_node))
 
-        def force_stage_links(left_nodes: List[Dict[str, object]], right_number_groups: List[tuple[str, int]]) -> None:
-            used_left_node_ids = {id(left) for left, _ in connector_pairs}
-            for right_number, count in right_number_groups:
-                right_candidates = match_nodes_by_number.get(right_number, [])
-                if not right_candidates:
-                    continue
-                right_node = right_candidates[0]
-                selected_left: List[Dict[str, object]] = []
-                for left_node in left_nodes:
-                    if id(left_node) in used_left_node_ids:
-                        continue
-                    selected_left.append(left_node)
-                    used_left_node_ids.add(id(left_node))
-                    if len(selected_left) == count:
-                        break
+        explicit_c4_pairs = [
+            ("35", "49"),
+            ("36", "50"),
+            ("37", "50"),
+            ("37", "51"),
+            ("39", "52"),
+            ("40", "53"),
+            ("41", "54"),
+            ("42", "54"),
+            ("43", "55"),
+            ("44", "55"),
+            ("45", "56"),
+            ("49", "57"),
+            ("50", "57"),
+            ("51", "58"),
+            ("52", "58"),
+            ("53", "59"),
+            ("54", "59"),
+            ("55", "60"),
+            ("56", "60"),
+            ("57", "61"),
+            ("58", "61"),
+            ("59", "62"),
+            ("60", "62"),
+            ("61", "64"),
+            ("62", "64"),
+        ]
 
-                connector_pairs[:] = [
-                    (left, right)
-                    for left, right in connector_pairs
-                    if not (right is right_node and left in selected_left)
-                ]
-                for left_node in selected_left:
-                    connector_pairs[:] = [
-                        (left, right)
-                        for left, right in connector_pairs
-                        if left is not left_node
-                    ]
-                    connector_pairs.append((left_node, right_node))
+        for left_number, right_number in explicit_c4_pairs:
+            connect_by_number(left_number, right_number)
 
-        stage0_nodes = sorted(
-            [node for node in match_nodes if _match_stage(str(node["text"])) == 0],
-            key=lambda item: int(item["row"]),
-        )
-        force_stage_links(
-            stage0_nodes,
-            [("49", 1), ("50", 2), ("51", 1), ("52", 1), ("53", 1), ("54", 2), ("55", 2), ("56", 1)],
-        )
+    if (category or "").lower() in {"c5", "c6", "c7"}:
+        def as_match_number(node: Dict[str, object]) -> Optional[int]:
+            text = str(node["text"]).strip()
+            digits = text.replace(".", "", 1)
+            if not digits.isdigit():
+                return None
+            return int(float(text))
 
-        force_pair("49", "57")
-        force_pair("50", "57")
-        force_pair("51", "58")
-        force_pair("52", "58")
-        force_pair("53", "59")
-        force_pair("54", "59")
-        force_pair("55", "60")
-        force_pair("56", "60")
-        force_pair("57", "61")
-        force_pair("58", "61")
-        force_pair("59", "62")
-        force_pair("60", "62")
-        force_pair("61", "64")
-        force_pair("62", "64")
+        nodes_by_number: Dict[int, List[Dict[str, object]]] = {}
+        for node in match_nodes:
+            match_number = as_match_number(node)
+            if match_number is None:
+                continue
+            nodes_by_number.setdefault(match_number, []).append(node)
+
+        for number in nodes_by_number:
+            nodes_by_number[number].sort(key=lambda item: int(item["row"]))
+
+        connector_pairs = [
+            (left_node, right_node)
+            for left_node, right_node in connector_pairs
+            if not (
+                _match_stage(str(left_node["text"])) == 0
+                and _match_stage(str(right_node["text"])) == 1
+            )
+        ]
+
+        for idx, target in enumerate(range(50, 58)):
+            left_a = 34 + idx * 2
+            left_b = left_a + 1
+            target_nodes = nodes_by_number.get(target, [])
+            left_a_nodes = nodes_by_number.get(left_a, [])
+            left_b_nodes = nodes_by_number.get(left_b, [])
+            if not target_nodes or not left_a_nodes or not left_b_nodes:
+                continue
+            target_node = target_nodes[0]
+            connector_pairs.append((left_a_nodes[0], target_node))
+            connector_pairs.append((left_b_nodes[0], target_node))
 
     return connector_pairs
 
 
-def _build_round_labels(nodes: List[Dict[str, object]]) -> str:
+def _find_direct_team_center(
+    nodes: List[Dict[str, object]],
+    target_node: Dict[str, object],
+    legend_start_row: Optional[int],
+) -> Optional[int]:
+    target_col = int(target_node["col"])
+    target_row = int(target_node["row"])
+    nearby_teams = sorted(
+        [
+            node
+            for node in nodes
+            if node["class"] == "team"
+            and int(node["col"]) == target_col
+            and abs(int(node["row"]) - target_row) <= 6
+            and (legend_start_row is None or int(node["row"]) < legend_start_row)
+        ],
+        key=lambda node: int(node["row"]),
+    )
+    if len(nearby_teams) < 2:
+        return None
+
+    best_center: Optional[int] = None
+    best_distance: Optional[float] = None
+    for idx in range(len(nearby_teams) - 1):
+        top_team = nearby_teams[idx]
+        bottom_team = nearby_teams[idx + 1]
+        row_gap = abs(int(bottom_team["row"]) - int(top_team["row"]))
+        if row_gap > 2:
+            continue
+
+        center_y = round((int(top_team["y"]) + int(bottom_team["y"])) / 2) + 12
+        center_row = (int(top_team["row"]) + int(bottom_team["row"])) / 2
+        distance = abs(center_row - target_row)
+        if best_distance is None or distance < best_distance:
+            best_distance = distance
+            best_center = center_y
+
+    return best_center
+
+
+def _align_match_nodes(
+    nodes: List[Dict[str, object]],
+    category: Optional[str] = None,
+) -> None:
+    legend_rows = [int(node["row"]) for node in nodes if node["class"] == "legend"]
+    legend_start_row = min(legend_rows) if legend_rows else None
+
+    connector_pairs = _compute_connector_pairs(nodes=nodes, category=category)
+    incoming_by_target: Dict[int, List[Dict[str, object]]] = {}
+    for left_node, right_node in connector_pairs:
+        incoming_by_target.setdefault(id(right_node), []).append(left_node)
+
+    staged_targets: Dict[int, List[Dict[str, object]]] = {}
+    for node in nodes:
+        if node["class"] != "match-id":
+            continue
+        if legend_start_row is not None and int(node["row"]) >= legend_start_row:
+            continue
+        stage = _match_stage(str(node["text"]))
+        if stage is None or stage == 0:
+            continue
+        staged_targets.setdefault(stage, []).append(node)
+
+    for stage in sorted(staged_targets):
+        for target_node in sorted(staged_targets[stage], key=lambda item: int(item["row"])):
+            candidate_centers = [
+                int(source_node["y"]) + 12
+                for source_node in incoming_by_target.get(id(target_node), [])
+            ]
+
+            direct_center = _find_direct_team_center(
+                nodes=nodes,
+                target_node=target_node,
+                legend_start_row=legend_start_row,
+            )
+            if direct_center is not None:
+                candidate_centers.append(direct_center)
+
+            if not candidate_centers:
+                continue
+
+            aligned_center = round(sum(candidate_centers) / len(candidate_centers))
+            target_node["y"] = aligned_center - 12
+
+
+def _build_round_labels(nodes: List[Dict[str, object]], category: Optional[str] = None) -> str:
     legend_rows = [int(node["row"]) for node in nodes if node["class"] == "legend"]
     legend_start_row = min(legend_rows) if legend_rows else None
 
@@ -355,6 +568,27 @@ def _build_round_labels(nodes: List[Dict[str, object]]) -> str:
     if not match_cols:
         return ""
 
+    stage_titles = {
+        0: "16avos",
+        1: "8vos",
+        2: "4tos",
+        3: "Semi",
+        4: "Final",
+    }
+
+    stage_counts_by_col: Dict[int, Dict[int, int]] = {}
+    for node in nodes:
+        if node["class"] != "match-id":
+            continue
+        if legend_start_row is not None and int(node["row"]) >= legend_start_row:
+            continue
+        stage = _match_stage(str(node["text"]))
+        if stage is None:
+            continue
+        col = int(node["col"])
+        stage_counts_by_col.setdefault(col, {})
+        stage_counts_by_col[col][stage] = stage_counts_by_col[col].get(stage, 0) + 1
+
     stage_order_from_final = ["Final", "Semi", "4tos", "8vos", "16avos", "32avos", "64avos"]
     total_rounds = len(match_cols)
     round_names: List[str] = []
@@ -367,7 +601,12 @@ def _build_round_labels(nodes: List[Dict[str, object]]) -> str:
 
     labels: List[str] = []
     for idx, col in enumerate(match_cols):
-        label = round_names[idx] if idx < len(round_names) else f"Ronda {idx + 1}"
+        stage_counts = stage_counts_by_col.get(col)
+        if stage_counts:
+            selected_stage = sorted(stage_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+            label = stage_titles.get(selected_stage, f"Ronda {idx + 1}")
+        else:
+            label = round_names[idx] if idx < len(round_names) else f"Ronda {idx + 1}"
         x = col * CELL_WIDTH
         labels.append(
             f'<div class="round-label" style="left:{x}px;">{escape(label)}</div>'
@@ -436,7 +675,10 @@ def _build_matchups_html(nodes: List[Dict[str, object]], category: Optional[str]
     return f'<div class="matchups-box"><div class="matchups-title">Cruces claros</div>{"".join(html_sections)}</div>'
 
 
-def _build_matchup_guides_svg(nodes: List[Dict[str, object]]) -> str:
+def _build_matchup_guides_svg(
+    nodes: List[Dict[str, object]],
+    category: Optional[str] = None,
+) -> str:
     legend_rows = [int(node["row"]) for node in nodes if node["class"] == "legend"]
     legend_start_row = min(legend_rows) if legend_rows else None
 
@@ -444,7 +686,6 @@ def _build_matchup_guides_svg(nodes: List[Dict[str, object]]) -> str:
         node
         for node in nodes
         if node["class"] == "match-id"
-        and (legend_start_row is None or int(node["row"]) < legend_start_row)
     ]
     if not matches:
         return ""
@@ -459,22 +700,33 @@ def _build_matchup_guides_svg(nodes: List[Dict[str, object]]) -> str:
         for node in nodes
         if node["class"] == "team"
         and int(node["col"]) == first_round_col
-        and (legend_start_row is None or int(node["row"]) < legend_start_row)
     ]
 
     guides: List[str] = []
     for match in first_round_matches:
         match_row = int(match["row"])
-        nearby_teams = sorted(
-            [team for team in teams if abs(int(team["row"]) - match_row) <= 5],
-            key=lambda team: (abs(int(team["row"]) - match_row), int(team["row"])),
-        )[:4]
+        candidate_teams = sorted(
+            [team for team in teams if abs(int(team["row"]) - match_row) <= 8],
+            key=lambda team: int(team["row"]),
+        )
+        upper_teams = [team for team in candidate_teams if int(team["row"]) <= match_row][-2:]
+        lower_teams = [team for team in candidate_teams if int(team["row"]) > match_row][:2]
+        nearby_teams = sorted(upper_teams + lower_teams, key=lambda team: int(team["row"]))
         if len(nearby_teams) < 2:
             continue
 
         # Find seeds on the same rows as teams
         team_rows = {int(t["row"]) for t in nearby_teams}
-        nearby_seeds = [n for n in nodes if n["class"] == "seed" and int(n["row"]) in team_rows and (legend_start_row is None or int(n["row"]) < legend_start_row)]
+        nearby_seeds = [
+            n
+            for n in nodes
+            if n["class"] in {"seed", "seed-between"}
+            and (
+                int(n["row"]) in team_rows
+                or int(n["row"]) in {row - 1 for row in team_rows}
+                or int(n["row"]) in {row + 1 for row in team_rows}
+            )
+        ]
         
         # Bounding box from seeds + teams + match
         all_nodes = nearby_seeds + nearby_teams + [match]
@@ -496,6 +748,7 @@ def _build_matchup_guides_svg(nodes: List[Dict[str, object]]) -> str:
 
 
 LABEL_ROW_HEIGHT = 28
+
 
 def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
     rows, cols = grid.shape
@@ -556,6 +809,11 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
                 continue
 
             cls = _cell_class(text)
+            if cls == "match-id":
+                try:
+                    text = str(int(float(text)))
+                except ValueError:
+                    pass
             extra_class = ""
             top = row_idx * CELL_HEIGHT + LABEL_ROW_HEIGHT
             left = col_idx * CELL_WIDTH
@@ -595,10 +853,17 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
                 f'<div class="node {cls}{extra_class}" style="top:{top}px;left:{left}px;">{safe_text}</div>'
             )
 
+    _align_match_nodes(nodes=node_data, category=category)
+
+    cell_html = []
+    for node in node_data:
+        safe_text = escape(str(node["text"]))
+        cell_html.append(
+            f'<div class="node {node["class"]}" style="top:{int(node["y"])}px;left:{int(node["x"])}px;">{safe_text}</div>'
+        )
+
     connectors_svg = _build_connectors(nodes=node_data, board_rows=rows, category=category)
-    matchup_guides_svg = _build_matchup_guides_svg(nodes=node_data)
-    round_labels_html = _build_round_labels(nodes=node_data)
-    matchups_html = _build_matchups_html(nodes=node_data, category=category)
+    matchup_guides_svg = _build_matchup_guides_svg(nodes=node_data, category=category)
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -809,9 +1074,6 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
     <div class="bracket-wrap">
             <div class="bracket-viewport">
                 <div class="bracket-board">
-                                    <div class="round-labels-container">
-                                        {round_labels_html}
-                                    </div>
                                     <svg class="bracket-lines" width="{width}" height="{height}">
                                           {matchup_guides_svg}
                                             {connectors_svg}
@@ -819,7 +1081,6 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
                     {''.join(cell_html)}
                 </div>
       </div>
-            {matchups_html}
     </div>
 </body>
 </html>
@@ -850,13 +1111,9 @@ def main() -> None:
     else:
         st.title("JPQ Llaves")
 
-    if not DATA_DIR.exists():
-        st.error(f"No se encontró la carpeta de datos: {DATA_DIR}")
-        st.stop()
-
-    brackets = load_brackets(DATA_DIR)
+    brackets = load_brackets()
     if not brackets:
-        st.warning("No se encontraron datos para mostrar.")
+        st.warning("No se pudieron cargar datos desde Google Sheets ni desde la carpeta local.")
         st.stop()
 
     categories = sorted(brackets.keys())

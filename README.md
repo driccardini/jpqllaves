@@ -1,12 +1,13 @@
 # JPQ Llaves - Streamlit
 
-App de Streamlit para publicar en un solo link el contenido de todos los Excel en la carpeta `LLAVES 1er JPQ`, tomando solamente la hoja que **no** empieza con `Base`.
+App de Streamlit para publicar en un solo link el contenido de la planilla Google Sheets de JPQ. Si la planilla remota no responde, usa como respaldo los Excel de la carpeta `LLAVES 1er JPQ`, tomando solamente la hoja que **no** empieza con `Base`.
 
 ## Qué hace
 
-- Lee todos los archivos `.xlsx` de `LLAVES 1er JPQ`.
-- En cada archivo, ignora hojas cuyo nombre comience con `Base`.
-- Usa la categoría según el nombre de archivo (por ejemplo, `c3.xlsx` -> `c3`).
+- Lee todas las hojas de la planilla Google Sheets configurada en `main.py`.
+- Ignora hojas cuyo nombre comience con `Base`.
+- Usa la categoría según el nombre de la hoja (por ejemplo, `c3` -> `c3`).
+- Si falla la carga remota, intenta leer los `.xlsx` locales de `LLAVES 1er JPQ`.
 - Consolida todo en una sola tabla.
 - Permite filtrar por categoría desde la interfaz.
 
