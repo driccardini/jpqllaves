@@ -274,6 +274,12 @@ def _build_connectors(
         force_pair("54", "59")
         force_pair("55", "60")
         force_pair("56", "60")
+        force_pair("57", "61")
+        force_pair("58", "61")
+        force_pair("59", "62")
+        force_pair("60", "62")
+        force_pair("61", "64")
+        force_pair("62", "64")
 
     connector_paths: List[str] = []
     for left_node, right_node in connector_pairs:
