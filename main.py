@@ -198,6 +198,69 @@ def _cell_class(value: str) -> str:
     return "team"
 
 
+def _extract_match_schedule_labels(grid: pd.DataFrame) -> Dict[str, str]:
+    labels: Dict[str, str] = {}
+
+    for row_idx in range(grid.shape[0]):
+        row_texts = {
+            col_idx: _normalize_cell_text(str(grid.iat[row_idx, col_idx]))
+            if pd.notna(grid.iat[row_idx, col_idx])
+            else ""
+            for col_idx in range(grid.shape[1])
+        }
+
+        partido_col = next(
+            (col for col, text in row_texts.items() if text.upper() == "Nº PARTIDO"),
+            None,
+        )
+        dia_hora_col = next(
+            (col for col, text in row_texts.items() if text.upper() == "DIA - HORA"),
+            None,
+        )
+        complejo_col = next(
+            (col for col, text in row_texts.items() if text.upper() == "COMPLEJO"),
+            None,
+        )
+
+        if partido_col is None or dia_hora_col is None or complejo_col is None:
+            continue
+
+        empty_streak = 0
+        for data_row in range(row_idx + 1, grid.shape[0]):
+            partido_raw = _normalize_cell_text(
+                str(grid.iat[data_row, partido_col]) if pd.notna(grid.iat[data_row, partido_col]) else ""
+            )
+            dia_hora = _normalize_cell_text(
+                str(grid.iat[data_row, dia_hora_col]) if pd.notna(grid.iat[data_row, dia_hora_col]) else ""
+            )
+            complejo = _normalize_cell_text(
+                str(grid.iat[data_row, complejo_col]) if pd.notna(grid.iat[data_row, complejo_col]) else ""
+            )
+
+            if partido_raw == "" and dia_hora == "" and complejo == "":
+                empty_streak += 1
+                if empty_streak >= 2:
+                    break
+                continue
+            empty_streak = 0
+
+            digits = partido_raw.replace(".", "", 1)
+            if not digits.isdigit():
+                continue
+
+            match_number = str(int(float(partido_raw)))
+            if dia_hora and complejo:
+                labels[match_number] = f"{dia_hora} | {complejo}"
+            elif dia_hora:
+                labels[match_number] = dia_hora
+            elif complejo:
+                labels[match_number] = complejo
+
+        break
+
+    return labels
+
+
 def _normalize_cell_text(value: str) -> str:
     text = value.replace("\xa0", " ").strip()
     if len(text) >= 2 and text[:-1].isdigit() and text[-1].isalpha() and text[-1].isupper() and "°" not in text:
@@ -1235,6 +1298,7 @@ def _compute_connector_pairs(
             connector_pairs.append((left_node, right_node))
 
         explicit_c2_pairs = [
+            ("1", "49"),
             ("34", "49"),
             ("49", "57"),
             ("50", "57"),
@@ -2974,6 +3038,8 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
             if c3_top_seed_pos is not None:
                 break
 
+    match_schedule_labels: Dict[str, str] = _extract_match_schedule_labels(grid)
+
     cell_html: List[str] = []
     node_data: List[Dict[str, object]] = []
     for row_idx in range(rows):
@@ -2986,11 +3052,14 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
                 continue
 
             cls = _cell_class(text)
+            display_text = text
             if cls == "match-id":
                 try:
                     text = str(int(float(text)))
                 except ValueError:
                     pass
+                if legend_start_row is None or row_idx < legend_start_row:
+                    display_text = match_schedule_labels.get(text, text)
             extra_class = ""
             top = row_idx * CELL_HEIGHT + LABEL_ROW_HEIGHT
             left = col_idx * CELL_WIDTH
@@ -3026,7 +3095,7 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
                 ):
                     left -= 56
 
-            safe_text = escape(text)
+            safe_text = escape(display_text)
             node_data.append(
                 {
                     "row": row_idx,
@@ -3035,6 +3104,7 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
                     "x": left,
                     "y": top,
                     "text": text,
+                    "display_text": display_text,
                 }
             )
             cell_html.append(
@@ -3045,7 +3115,7 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
 
     cell_html = []
     for node in node_data:
-        safe_text = escape(str(node["text"]))
+        safe_text = escape(str(node.get("display_text", node["text"])))
         cell_html.append(
             f'<div class="node {node["class"]}" style="top:{int(node["y"])}px;left:{int(node["x"])}px;">{safe_text}</div>'
         )
