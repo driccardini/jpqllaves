@@ -2912,14 +2912,10 @@ def _build_matchup_guides_svg(
     if (category or "").lower() == "c6 40":
         return ""
 
-    legend_rows = [int(node["row"]) for node in nodes if node["class"] == "legend"]
-    legend_start_row = min(legend_rows) if legend_rows else None
-
     matches = [
         node
         for node in nodes
         if node["class"] == "match-id"
-        and (legend_start_row is None or int(node["row"]) < legend_start_row)
     ]
     if not matches:
         return ""
@@ -2934,7 +2930,6 @@ def _build_matchup_guides_svg(
         for node in nodes
         if node["class"] == "team"
         and int(node["col"]) == first_round_col
-        and (legend_start_row is None or int(node["row"]) < legend_start_row)
     ]
 
     guides: List[str] = []
@@ -2955,7 +2950,6 @@ def _build_matchup_guides_svg(
                     for node in nodes
                     if node["class"] in {"seed", "seed-between"}
                     and abs(int(node["row"]) - match_row) <= 8
-                    and (legend_start_row is None or int(node["row"]) < legend_start_row)
                 ],
                 key=lambda node: int(node["row"]),
             )
