@@ -2216,6 +2216,14 @@ def _align_match_nodes(
             match_60["y"] = round((center_1b + center_55) / 2) - 12
 
     if (category or "").lower().startswith(("c5", "c6", "c7")) and (category or "").lower() not in {"c6 35", "c6 40", "c7 40"}:
+        seed_centers: Dict[str, int] = {}
+        for node in nodes:
+            if node["class"] not in {"seed", "seed-between"}:
+                continue
+            if legend_start_row is not None and int(node["row"]) >= legend_start_row:
+                continue
+            seed_centers[str(node["text"]).strip()] = int(node["y"]) + 12
+
         match_nodes_by_number: Dict[str, Dict[str, object]] = {}
         for node in nodes:
             if node["class"] != "match-id":
@@ -2223,6 +2231,12 @@ def _align_match_nodes(
             if legend_start_row is not None and int(node["row"]) >= legend_start_row:
                 continue
             match_nodes_by_number[str(node["text"]).strip()] = node
+
+        match_49 = match_nodes_by_number.get("49")
+        center_2a = seed_centers.get("2° A")
+        center_1b = seed_centers.get("1° B")
+        if match_49 is not None and center_2a is not None and center_1b is not None:
+            match_49["y"] = round((center_2a + center_1b) / 2) - 12
 
         for target in range(50, 56):
             feeder_a = str(34 + (target - 50) * 2)
