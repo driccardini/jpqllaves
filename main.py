@@ -219,11 +219,22 @@ def _build_connectors(
         return f"M{x1},{y1} H{mid_x} V{y2} H{x2}"
 
     connector_paths: List[str] = []
+    c3_shared_trunk_x_by_target: Dict[str, int] = {}
     for left_node, right_node in connector_pairs:
         x1 = int(left_node["x"]) + 78
         y1 = int(left_node["y"]) + 12
         x2 = int(right_node["x"]) + 88
         y2 = int(right_node["y"]) + 12
+
+        if (category or "").lower() == "c3":
+            left_text = str(left_node["text"]).strip()
+            right_text = str(right_node["text"]).strip()
+            if (left_text, right_text) in {("50", "57"), ("54", "59"), ("55", "60")}:
+                trunk_x = x1 + max(14, (x2 - x1) // 2)
+                c3_shared_trunk_x_by_target[right_text] = trunk_x
+                connector_paths.append(f"M{x1},{y1} H{trunk_x} V{y2} H{x2}")
+                continue
+
         connector_paths.append(route(x1, y1, x2, y2))
 
     if (category or "").lower() == "c2":
@@ -278,8 +289,33 @@ def _build_connectors(
 
             x1 = anchor[0] + 78
             y1 = anchor[1]
-            x2 = int(target_node["x"]) + 88
             y2 = int(target_node["y"]) + 12
+
+            if (
+                seed_label.strip() == "1° A"
+                and target_number == "57"
+                and "57" in c3_shared_trunk_x_by_target
+            ):
+                connector_paths.append(f"M{x1},{y1} H{c3_shared_trunk_x_by_target['57']} V{y2}")
+                return
+
+            if (
+                seed_label.strip() == "1° C"
+                and target_number == "59"
+                and "59" in c3_shared_trunk_x_by_target
+            ):
+                connector_paths.append(f"M{x1},{y1} H{c3_shared_trunk_x_by_target['59']} V{y2}")
+                return
+
+            if (
+                seed_label.strip() == "1° B"
+                and target_number == "60"
+                and "60" in c3_shared_trunk_x_by_target
+            ):
+                connector_paths.append(f"M{x1},{y1} H{c3_shared_trunk_x_by_target['60']} V{y2}")
+                return
+
+            x2 = int(target_node["x"]) - 12
             connector_paths.append(route(x1, y1, x2, y2))
 
         append_direct_connector("9°", "50")
@@ -352,6 +388,66 @@ def _build_connectors(
         append_direct_connector("1° D", "52")
         append_direct_connector("1° C", "53")
         append_direct_connector("1° B", "56")
+
+    if (category or "").lower() == "c3":
+        def find_direct_anchor(seed_label: str) -> Optional[tuple[int, int]]:
+            seed_text = seed_label.strip()
+            seed_node = next(
+                (
+                    node
+                    for node in nodes
+                    if node["class"] in {"seed", "seed-between"}
+                    and str(node["text"]).strip() == seed_text
+                ),
+                None,
+            )
+            if seed_node is None:
+                return None
+
+            seed_col = int(seed_node["col"])
+            seed_row = int(seed_node["row"])
+            paired_teams = sorted(
+                [
+                    node
+                    for node in nodes
+                    if node["class"] == "team"
+                    and int(node["col"]) == seed_col + 1
+                    and int(node["row"]) in {seed_row, seed_row + 1}
+                ],
+                key=lambda node: int(node["row"]),
+            )
+            if not paired_teams:
+                return None
+
+            x = int(paired_teams[0]["x"])
+            if len(paired_teams) >= 2:
+                y = (int(paired_teams[0]["y"]) + int(paired_teams[1]["y"])) // 2 + 12
+            else:
+                y = int(paired_teams[0]["y"]) + 12
+            return x, y
+
+        def append_direct_connector(seed_label: str, target_number: str) -> None:
+            anchor = find_direct_anchor(seed_label)
+            target_node = next(
+                (
+                    node
+                    for node in nodes
+                    if node["class"] == "match-id" and str(node["text"]) == target_number
+                ),
+                None,
+            )
+            if anchor is None or target_node is None:
+                return
+
+            x1 = anchor[0] + 78
+            y1 = anchor[1]
+            x2 = int(target_node["x"]) + 88
+            y2 = int(target_node["y"]) + 12
+            connector_paths.append(route(x1, y1, x2, y2))
+
+        append_direct_connector("1° A", "57")
+        append_direct_connector("1° C", "59")
+        append_direct_connector("1° B", "60")
 
     return "".join(
         f'<path d="{path}" class="connector"></path>' for path in connector_paths
@@ -583,6 +679,29 @@ def _compute_connector_pairs(
             connector_pairs.append((left_a_nodes[0], target_node))
             connector_pairs.append((left_b_nodes[0], target_node))
 
+    if (category or "").lower() == "c3":
+        connector_pairs = [
+            (left_node, right_node)
+            for left_node, right_node in connector_pairs
+            if not (str(left_node["text"]).strip() == "50" and str(right_node["text"]).strip() == "61")
+        ]
+
+        match_50 = next(
+            (node for node in match_nodes if str(node["text"]).strip() == "50"),
+            None,
+        )
+        match_57 = next(
+            (node for node in match_nodes if str(node["text"]).strip() == "57"),
+            None,
+        )
+        if match_50 is not None and match_57 is not None:
+            has_50_to_57 = any(
+                str(left_node["text"]).strip() == "50" and str(right_node["text"]).strip() == "57"
+                for left_node, right_node in connector_pairs
+            )
+            if not has_50_to_57:
+                connector_pairs.append((match_50, match_57))
+
     return connector_pairs
 
 
@@ -709,6 +828,47 @@ def _align_match_nodes(
                 continue
 
             target_node["y"] = round((center_a + center_b) / 2) - 12
+
+    if (category or "").lower() == "c3":
+        seed_centers: Dict[str, int] = {}
+        for node in nodes:
+            if node["class"] not in {"seed", "seed-between"}:
+                continue
+            if legend_start_row is not None and int(node["row"]) >= legend_start_row:
+                continue
+            seed_centers[str(node["text"]).strip()] = int(node["y"]) + 12
+
+        c3_seed_pairs = {
+            "50": ("2° C", "2° F"),
+            "51": ("1° E", "2° B"),
+            "52": ("3° A", "1° D"),
+            "54": ("2° A", "1° F"),
+            "55": ("2° E", "2° D"),
+        }
+
+        match_nodes_by_number: Dict[str, Dict[str, object]] = {}
+        for node in nodes:
+            if node["class"] != "match-id":
+                continue
+            if legend_start_row is not None and int(node["row"]) >= legend_start_row:
+                continue
+            match_nodes_by_number[str(node["text"]).strip()] = node
+
+        for match_number, (seed_a, seed_b) in c3_seed_pairs.items():
+            target_node = match_nodes_by_number.get(match_number)
+            center_a = seed_centers.get(seed_a)
+            center_b = seed_centers.get(seed_b)
+            if target_node is None or center_a is None or center_b is None:
+                continue
+            target_node["y"] = round((center_a + center_b) / 2) - 12
+
+        match_50 = match_nodes_by_number.get("50")
+
+        match_57 = match_nodes_by_number.get("57")
+        center_1a = seed_centers.get("1° A")
+        if match_57 is not None and match_50 is not None and center_1a is not None:
+            center_50 = int(match_50["y"]) + 12
+            match_57["y"] = round((center_1a + center_50) / 2) - 12
 
 
 def _build_round_labels(nodes: List[Dict[str, object]], category: Optional[str] = None) -> str:
@@ -955,6 +1115,20 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
             if _cell_class(text) == "match-id":
                 first_round_rows.add(row_idx)
 
+    c3_top_seed_pos: Optional[tuple[int, int]] = None
+    if (category or "").lower() == "c3":
+        for row_idx in range(rows):
+            for col_idx in range(cols):
+                value = grid.iat[row_idx, col_idx]
+                if pd.isna(value):
+                    continue
+                text = str(value).strip()
+                if text == "1° A":
+                    c3_top_seed_pos = (row_idx, col_idx)
+                    break
+            if c3_top_seed_pos is not None:
+                break
+
     cell_html: List[str] = []
     node_data: List[Dict[str, object]] = []
     for row_idx in range(rows):
@@ -995,6 +1169,17 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
                         top = row_idx * CELL_HEIGHT + CELL_HEIGHT // 2 + LABEL_ROW_HEIGHT
                         left = (col_idx + 1) * CELL_WIDTH - 44
                         cls = "seed-between"
+
+            if (category or "").lower() == "c3" and c3_top_seed_pos is not None:
+                top_seed_row, top_seed_col = c3_top_seed_pos
+                if cls in {"seed", "seed-between"} and text == "1° A":
+                    left -= 56
+                if (
+                    cls == "team"
+                    and col_idx == top_seed_col + 1
+                    and row_idx in {top_seed_row, top_seed_row + 1}
+                ):
+                    left -= 56
 
             safe_text = escape(text)
             node_data.append(
