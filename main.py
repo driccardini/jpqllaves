@@ -12,14 +12,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 
-DATA_DIR = Path(__file__).parent / "LLAVES 1er JPQ"
 DEFAULT_SHEET_URL = "https://docs.google.com/spreadsheets/d/1kiw5oIs3dw5yj2ME26tHoJ7Y5_TEvqYBnxHoDVeoi_4/export?format=xlsx"
 SHEET_URL = os.getenv("JPQ_SHEET_URL", DEFAULT_SHEET_URL).strip()
-USE_LOCAL_FALLBACK = os.getenv("JPQ_USE_LOCAL_FALLBACK", "1").strip().lower() not in {
-    "0",
-    "false",
-    "no",
-}
 SHEET_TIMEOUT_SECONDS = 20
 LOGO_GLOB = "Logo JPQ*"
 CELL_WIDTH = 132
@@ -78,13 +72,6 @@ def load_logo_data_uri() -> Optional[str]:
     return f"data:{mime_type};base64,{encoded}"
 
 
-def _find_data_sheet(sheet_names: List[str]) -> Optional[str]:
-    for sheet_name in sheet_names:
-        if not sheet_name.lower().startswith("base"):
-            return sheet_name
-    return None
-
-
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_brackets() -> Dict[str, Dict[str, object]]:
     brackets: Dict[str, Dict[str, object]] = {}
@@ -134,49 +121,7 @@ def load_brackets() -> Dict[str, Dict[str, object]]:
     except Exception:
         pass
 
-    if not USE_LOCAL_FALLBACK:
-        return {}
-
-    for file_path in sorted(DATA_DIR.glob("*.xlsx")):
-        category = file_path.stem
-        excel_file = pd.ExcelFile(file_path)
-        data_sheet = _find_data_sheet(excel_file.sheet_names)
-
-        if data_sheet is None:
-            continue
-
-        bracket_df = pd.read_excel(file_path, sheet_name=data_sheet, header=None)
-
-        first_used_row: Optional[int] = None
-        first_used_col: Optional[int] = None
-        last_used_row = 0
-        last_used_col = 0
-        for row_idx in range(bracket_df.shape[0]):
-            for col_idx in range(bracket_df.shape[1]):
-                value = bracket_df.iat[row_idx, col_idx]
-                if pd.notna(value) and str(value).strip() != "":
-                    if first_used_row is None:
-                        first_used_row = row_idx
-                    else:
-                        first_used_row = min(first_used_row, row_idx)
-                    if first_used_col is None:
-                        first_used_col = col_idx
-                    else:
-                        first_used_col = min(first_used_col, col_idx)
-                    last_used_row = max(last_used_row, row_idx)
-                    last_used_col = max(last_used_col, col_idx)
-
-        if first_used_row is None or first_used_col is None:
-            continue
-
-        cropped = bracket_df.iloc[
-            first_used_row : last_used_row + 1,
-            first_used_col : last_used_col + 1,
-        ].reset_index(drop=True)
-        cropped.columns = range(cropped.shape[1])
-        brackets[category] = {"sheet": data_sheet, "grid": cropped}
-
-    return brackets
+    return {}
 
 
 def _cell_class(value: str) -> str:
@@ -3477,7 +3422,10 @@ def main() -> None:
 
     brackets = load_brackets()
     if not brackets:
-        st.warning("No se pudieron cargar datos desde Google Sheets ni desde la carpeta local.")
+        st.error(
+            "No se pudieron cargar datos desde Google Sheets. "
+            "Revisá que la planilla esté compartida para acceso sin login y que el link de exportación siga activo."
+        )
         st.stop()
 
     categories = sorted(brackets.keys())
