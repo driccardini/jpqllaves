@@ -14,6 +14,18 @@ import streamlit.components.v1 as components
 
 DEFAULT_SHEET_URL = "https://docs.google.com/spreadsheets/d/1kiw5oIs3dw5yj2ME26tHoJ7Y5_TEvqYBnxHoDVeoi_4/export?format=xlsx"
 SHEET_URL = os.getenv("JPQ_SHEET_URL", DEFAULT_SHEET_URL).strip()
+DEFAULT_VISIBLE_CATEGORIES = (
+    "d2",
+    "d4",
+    "d5",
+    "d6",
+    "d7",
+    "c5 40",
+    "c6 35",
+    "c6 40",
+    "c7 40",
+)
+VISIBLE_CATEGORIES_ENV = os.getenv("JPQ_VISIBLE_CATEGORIES", ",".join(DEFAULT_VISIBLE_CATEGORIES)).strip()
 SHEET_TIMEOUT_SECONDS = 20
 LOGO_GLOB = "Logo JPQ*"
 CELL_WIDTH = 132
@@ -211,6 +223,27 @@ def _normalize_cell_text(value: str) -> str:
     if len(text) >= 2 and text[:-1].isdigit() and text[-1].isalpha() and text[-1].isupper() and "°" not in text:
         return f"{int(text[:-1])}° {text[-1]}"
     return text
+
+
+def _normalize_category_name(value: str) -> str:
+    return " ".join(value.strip().lower().split())
+
+
+def _filter_visible_categories(brackets: Dict[str, Dict[str, object]]) -> Dict[str, Dict[str, object]]:
+    env_value = VISIBLE_CATEGORIES_ENV.strip()
+    if not env_value or env_value.lower() == "all":
+        return brackets
+
+    allowed = {
+        _normalize_category_name(item)
+        for item in env_value.split(",")
+        if item.strip()
+    }
+    return {
+        category: payload
+        for category, payload in brackets.items()
+        if _normalize_category_name(category) in allowed
+    }
 
 
 def _match_stage(value: str) -> Optional[int]:
@@ -3426,6 +3459,11 @@ def main() -> None:
             "No se pudieron cargar datos desde Google Sheets. "
             "Revisá que la planilla esté compartida para acceso sin login y que el link de exportación siga activo."
         )
+        st.stop()
+
+    brackets = _filter_visible_categories(brackets)
+    if not brackets:
+        st.error("No hay categorías publicadas con la configuración actual.")
         st.stop()
 
     categories = sorted(brackets.keys())
