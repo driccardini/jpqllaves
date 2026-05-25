@@ -16,11 +16,34 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 
+def _get_config_value(name: str, default: str = "") -> str:
+    env_value = os.getenv(name)
+    if env_value is not None and str(env_value).strip() != "":
+        return str(env_value).strip()
+
+    try:
+        secret_value = st.secrets.get(name, "")
+    except Exception:
+        secret_value = ""
+
+    if secret_value is None:
+        return default
+
+    secret_value = str(secret_value).strip()
+    return secret_value if secret_value != "" else default
+
+
+def _get_config_bool(name: str, default: bool) -> bool:
+    default_text = "1" if default else "0"
+    value = _get_config_value(name, default_text).lower()
+    return value in {"1", "true", "yes"}
+
+
 DEFAULT_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Wm5ieVgYn1NCNNtzyjs-bOF6kKzCjkk76Bdq0KaUNzE/export?format=xlsx"
-SHEET_URL = os.getenv("JPQ_SHEET_URL", DEFAULT_SHEET_URL).strip()
-SHEET_ID = os.getenv("JPQ_SHEET_ID", "").strip()
-SERVICE_ACCOUNT_FILE = os.getenv("JPQ_GOOGLE_SERVICE_ACCOUNT_FILE", "").strip()
-SERVICE_ACCOUNT_JSON = os.getenv("JPQ_GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+SHEET_URL = _get_config_value("JPQ_SHEET_URL", DEFAULT_SHEET_URL)
+SHEET_ID = _get_config_value("JPQ_SHEET_ID", "")
+SERVICE_ACCOUNT_FILE = _get_config_value("JPQ_GOOGLE_SERVICE_ACCOUNT_FILE", "")
+SERVICE_ACCOUNT_JSON = _get_config_value("JPQ_GOOGLE_SERVICE_ACCOUNT_JSON", "")
 GOOGLE_EXPORT_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 GOOGLE_SERVICE_ACCOUNT_SCOPES = ("https://www.googleapis.com/auth/drive.readonly",)
 DEFAULT_VISIBLE_CATEGORIES = (
@@ -40,6 +63,7 @@ LOGO_GLOB = "Logo JPQ*"
 CELL_WIDTH = 132
 CELL_HEIGHT = 26
 LOCAL_FALLBACK_DIR = Path(__file__).parent / "LLAVES 1er JPQ"
+LAST_LOAD_ERROR: Optional[str] = None
 
 
 APP_CSS = """
@@ -96,18 +120,22 @@ def load_logo_data_uri() -> Optional[str]:
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_brackets() -> Dict[str, Dict[str, object]]:
-    use_local_fallback = os.getenv("JPQ_USE_LOCAL_FALLBACK", "1").strip().lower() in {"1", "true", "yes"}
+    global LAST_LOAD_ERROR
+    use_local_fallback = _get_config_bool("JPQ_USE_LOCAL_FALLBACK", True)
 
     try:
         workbook_bytes = _download_workbook_bytes()
+        LAST_LOAD_ERROR = None
         return _load_brackets_from_workbook_bytes(workbook_bytes)
     except Exception as e:
+        LAST_LOAD_ERROR = str(e)
         print("ERROR AL DESCARGAR PLANILLA:", e)
         if not use_local_fallback:
             raise
 
     local_brackets = _load_local_brackets()
     if local_brackets:
+        LAST_LOAD_ERROR = None
         return local_brackets
 
     return {}
@@ -185,6 +213,27 @@ def _build_service_account_credentials() -> Optional[Any]:
             account_info = json.loads(SERVICE_ACCOUNT_JSON)
         except json.JSONDecodeError as e:
             raise RuntimeError("JPQ_GOOGLE_SERVICE_ACCOUNT_JSON no es JSON valido") from e
+        return credentials_factory.from_service_account_info(
+            account_info,
+            scopes=GOOGLE_SERVICE_ACCOUNT_SCOPES,
+        )
+
+    # Streamlit Cloud friendly format:
+    # [gcp_service_account]
+    # type = "service_account"
+    # project_id = "..."
+    # ...
+    try:
+        gcp_secret = st.secrets.get("gcp_service_account", None)
+    except Exception:
+        gcp_secret = None
+
+    if gcp_secret:
+        if isinstance(gcp_secret, dict):
+            account_info = dict(gcp_secret)
+        else:
+            # Some Streamlit secret providers may return a mapping-like object.
+            account_info = {k: gcp_secret[k] for k in gcp_secret}
         return credentials_factory.from_service_account_info(
             account_info,
             scopes=GOOGLE_SERVICE_ACCOUNT_SCOPES,
@@ -3602,8 +3651,11 @@ def main() -> None:
     if not brackets:
         st.error(
             "No se pudieron cargar datos desde Google Sheets. "
-            "Revisá que la planilla esté compartida para acceso sin login y que el link de exportación siga activo."
+            "Verificá si usás URL pública de exportación (.xlsx) o Service Account "
+            "(JPQ_SHEET_ID + JPQ_GOOGLE_SERVICE_ACCOUNT_FILE/JPQ_GOOGLE_SERVICE_ACCOUNT_JSON)."
         )
+        if LAST_LOAD_ERROR:
+            st.caption(f"Detalle técnico: {LAST_LOAD_ERROR}")
         st.stop()
 
     brackets = _filter_visible_categories(brackets)

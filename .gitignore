@@ -14,3 +14,7 @@ wheels/
 
 # Zip backups
 *.zip
+
+# Local env and Streamlit secrets
+.env
+.streamlit/secrets.toml

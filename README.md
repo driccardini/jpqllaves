@@ -68,3 +68,50 @@ streamlit run main.py
 ## Publicar en un solo link
 
 Podés desplegar esta app en Streamlit Community Cloud apuntando al repo y archivo `main.py`.
+
+## Deploy en Streamlit Community Cloud
+
+La app ya soporta configuracion por variables de entorno y tambien por Streamlit Secrets.
+
+1. Subi este repo a GitHub.
+2. En Streamlit Community Cloud, creá una app apuntando a `main.py`.
+3. En Settings -> Secrets, cargá estas claves:
+
+```toml
+JPQ_SHEET_ID = "tu_sheet_id"
+JPQ_USE_LOCAL_FALLBACK = "0"
+
+# Opcion A: ruta local (normalmente no aplica en Cloud)
+# JPQ_GOOGLE_SERVICE_ACCOUNT_FILE = "/ruta/credenciales.json"
+
+# Opcion B (recomendada en Cloud): JSON completo en una sola linea
+JPQ_GOOGLE_SERVICE_ACCOUNT_JSON = "{\"type\":\"service_account\",\"project_id\":\"...\",\"private_key\":\"-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n\",\"client_email\":\"...\",\"token_uri\":\"https://oauth2.googleapis.com/token\"}"
+```
+
+Alternativa recomendada para evitar errores de TOML en Cloud:
+
+```toml
+JPQ_SHEET_ID = "tu_sheet_id"
+JPQ_USE_LOCAL_FALLBACK = "0"
+
+[gcp_service_account]
+type = "service_account"
+project_id = "padelstats-492015"
+private_key_id = "..."
+private_key = """-----BEGIN PRIVATE KEY-----
+...
+-----END PRIVATE KEY-----
+"""
+client_email = "..."
+client_id = "..."
+auth_uri = "https://accounts.google.com/o/oauth2/auth"
+token_uri = "https://oauth2.googleapis.com/token"
+auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
+client_x509_cert_url = "..."
+universe_domain = "googleapis.com"
+```
+
+Notas:
+
+- Si usás planilla privada, compartila con el email de la Service Account con permiso de lectura.
+- En Cloud conviene usar `JPQ_GOOGLE_SERVICE_ACCOUNT_JSON` en Secrets y no commitear ningun archivo de credenciales.
