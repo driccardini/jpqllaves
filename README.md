@@ -16,9 +16,32 @@ App de Streamlit para publicar en un solo link el contenido de la planilla Googl
 Podés configurar la fuente remota sin editar código:
 
 - `JPQ_SHEET_URL`: URL de exportación `.xlsx` de Google Sheets.
+- `JPQ_SHEET_ID`: ID del spreadsheet (opcional, recomendado para acceso privado).
 - `JPQ_USE_LOCAL_FALLBACK`: define si usa respaldo local cuando falla Google Sheets.
 	- `1` / `true` / `yes` (por defecto): habilitado.
 	- `0` / `false` / `no`: deshabilitado (modo solo Google Sheets).
+
+Para Google Sheets privado (sin URL publica), agregá una de estas opciones de credenciales:
+
+- `JPQ_GOOGLE_SERVICE_ACCOUNT_FILE`: ruta al JSON de Service Account.
+- `JPQ_GOOGLE_SERVICE_ACCOUNT_JSON`: contenido JSON completo (ideal para secrets en deploy).
+
+La app intenta primero descarga pública por `JPQ_SHEET_URL`; si falla, intenta export autenticado con Service Account usando Drive API.
+
+### Pasos para acceso privado (Service Account)
+
+1. En Google Cloud, crear una Service Account y descargar su JSON.
+2. Compartir la planilla de Google Sheets con el email de esa Service Account (permiso de lectura).
+3. Definir variables de entorno y ejecutar la app.
+
+Ejemplo:
+
+```bash
+export JPQ_SHEET_ID="tu_sheet_id"
+export JPQ_GOOGLE_SERVICE_ACCOUNT_FILE="/ruta/credenciales.json"
+export JPQ_USE_LOCAL_FALLBACK=0
+streamlit run main.py
+```
 
 Ejemplo de ejecución en modo solo Google Sheets:
 
