@@ -47,17 +47,17 @@ SERVICE_ACCOUNT_JSON = _get_config_value("JPQ_GOOGLE_SERVICE_ACCOUNT_JSON", "")
 GOOGLE_EXPORT_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 GOOGLE_SERVICE_ACCOUNT_SCOPES = ("https://www.googleapis.com/auth/drive.readonly",)
 DEFAULT_VISIBLE_CATEGORIES = (
+    "c5 40",
+    "c6 35",
+    "c6 45",
+    "c7 45",
     "d2",
     "d4",
     "d5",
     "d6",
     "d7",
-    "c5 40",
-    "c6 35",
-    "c6 40",
-    "c7 40",
 )
-VISIBLE_CATEGORIES_ENV = os.getenv("JPQ_VISIBLE_CATEGORIES", "all").strip()
+VISIBLE_CATEGORIES_ENV = os.getenv("JPQ_VISIBLE_CATEGORIES", ",".join(DEFAULT_VISIBLE_CATEGORIES)).strip()
 SHEET_TIMEOUT_SECONDS = 20
 LOGO_GLOB = "Logo JPQ*"
 CELL_WIDTH = 132
