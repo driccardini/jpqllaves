@@ -605,20 +605,18 @@ def _build_connectors(
 
             connector_paths.append(route(x1, y1, x2, y2))
 
-        append_direct_connector("9°", "50")
-        append_direct_connector("8°", "50")
+        append_direct_connector("1°", "57")
+        append_direct_connector("12°", "57")
+        append_direct_connector("10°", "50")
         append_direct_connector("5°", "51")
-        append_direct_connector("12°", "51")
-        append_direct_connector("13°", "52")
-        append_direct_connector("4°", "52")
-        append_direct_connector("3°", "53")
-        append_direct_connector("14°", "53")
-        append_direct_connector("11°", "54")
+        append_direct_connector("8°", "51")
+        append_direct_connector("4°", "58")
+        append_direct_connector("3°", "59")
+        append_direct_connector("7°", "59")
         append_direct_connector("6°", "54")
-        append_direct_connector("7°", "55")
-        append_direct_connector("10°", "55")
-        append_direct_connector("15°", "56")
-        append_direct_connector("2°", "56")
+        append_direct_connector("9°", "55")
+        append_direct_connector("11°", "60")
+        append_direct_connector("2°", "60")
 
     if (category or "").lower() == "c3":
         def find_direct_anchor(seed_label: str) -> Optional[tuple[int, int]]:
@@ -2119,13 +2117,14 @@ def _align_match_nodes(
             seed_centers[str(node["text"]).strip()] = int(node["y"]) + 12
 
         c2_seed_pairs = {
-            "50": ("9°", "8°"),
-            "51": ("5°", "12°"),
-            "52": ("13°", "4°"),
-            "53": ("3°", "14°"),
-            "54": ("11°", "6°"),
-            "55": ("7°", "10°"),
-            "56": ("15°", "2°"),
+            "50": ("12°", "10°"),
+            "51": ("5°", "8°"),
+            "54": ("7°", "6°"),
+            "55": ("9°", "11°"),
+            "57": ("1°", "12°"),
+            "58": ("8°", "4°"),
+            "59": ("3°", "7°"),
+            "60": ("11°", "2°"),
         }
 
         for match_number, (seed_a, seed_b) in c2_seed_pairs.items():
@@ -3245,6 +3244,10 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
                 continue
 
             cls = _cell_class(text)
+            if (category or "").lower() == "c2" and cls == "match-id" and col_idx <= 2:
+                if text.isdigit() and 1 <= int(text) <= 16:
+                    cls = "seed"
+                    text = f"{int(text)}°"
             display_text = text
             if cls == "match-id":
                 try:
