@@ -391,11 +391,11 @@ def _extract_match_schedule_labels(grid: pd.DataFrame) -> Dict[str, str]:
 
             match_number = str(int(float(partido_raw)))
             if dia_hora and complejo:
-                labels[match_number] = f"{dia_hora} | {complejo}"
+                labels[match_number] = f"{match_number} | {dia_hora} | {complejo}"
             elif dia_hora:
-                labels[match_number] = dia_hora
+                labels[match_number] = f"{match_number} | {dia_hora}"
             elif complejo:
-                labels[match_number] = complejo
+                labels[match_number] = f"{match_number} | {complejo}"
 
         break
 
