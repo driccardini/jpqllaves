@@ -3602,18 +3602,21 @@ def render_bracket(
                     f'&#10003; {ganador}{marcador_html}</div>'
                 )
 
-    # Build incoming-winner map: {target_match_num: [winner_name, ...]}
-    # Uses connector topology so 50→57, 51→58, etc.
-    incoming_winners: Dict[str, List[str]] = {}
+    # Build incoming-winner map using topology: {target_match_num: {position: winner_name}}
+    # position 1 = pareja superior (badge above node), position 2 = pareja inferior (badge below node)
+    incoming_winners: Dict[str, Dict[int, str]] = {}
     if results:
-        for left_node, right_node in _compute_connector_pairs(node_data, category):
-            src = str(left_node["text"])
-            tgt = str(right_node["text"])
-            src_result = (results or {}).get((cat_key, src))
-            if src_result and src_result.get("ganador"):
-                incoming_winners.setdefault(tgt, []).append(src_result["ganador"])
+        _topo = _build_propagation_topology()
+        for (t_cat, src_num), targets in _topo.items():
+            if t_cat != cat_key:
+                continue
+            src_result = (results or {}).get((cat_key, src_num))
+            if not src_result or not src_result.get("ganador"):
+                continue
+            for tgt_num, position in targets:
+                incoming_winners.setdefault(tgt_num, {})[position] = src_result["ganador"]
 
-    # Render incoming-winner badges on target match nodes
+    # Render incoming-winner badges: pareja 1 above the match node, pareja 2 below
     if incoming_winners:
         match_nodes_map: Dict[str, Dict[str, object]] = {
             str(n["text"]): n
@@ -3621,7 +3624,7 @@ def render_bracket(
             if n.get("class") == "match-id"
             and (legend_start_row is None or int(n["row"]) < legend_start_row)
         }
-        for tgt_num, winners in incoming_winners.items():
+        for tgt_num, pos_winners in incoming_winners.items():
             tgt_node = match_nodes_map.get(tgt_num)
             if tgt_node is None:
                 continue
@@ -3629,12 +3632,21 @@ def render_bracket(
             tgt_result = (results or {}).get((cat_key, tgt_num))
             if tgt_result and tgt_result.get("ganador"):
                 continue
-            for i, winner in enumerate(winners):
-                badge_top = int(tgt_node["y"]) - CELL_HEIGHT * (i + 1)
+            # Pareja 1 (upper) → badge above the match node
+            if 1 in pos_winners:
+                badge_top = int(tgt_node["y"]) - CELL_HEIGHT
                 badge_left = int(tgt_node["x"]) - 30
                 cell_html.append(
                     f'<div class="node incoming-badge" style="top:{badge_top}px;left:{badge_left}px;">'
-                    f'&#8594; {escape(winner)}</div>'
+                    f'&#8594; {escape(pos_winners[1])}</div>'
+                )
+            # Pareja 2 (lower) → badge below the match node
+            if 2 in pos_winners:
+                badge_top = int(tgt_node["y"]) + CELL_HEIGHT
+                badge_left = int(tgt_node["x"]) - 30
+                cell_html.append(
+                    f'<div class="node incoming-badge" style="top:{badge_top}px;left:{badge_left}px;">'
+                    f'&#8594; {escape(pos_winners[2])}</div>'
                 )
 
     connectors_svg = _build_connectors(nodes=node_data, board_rows=rows, category=category)
@@ -3797,6 +3809,7 @@ def render_bracket(
                                 border: 1px solid rgba(92, 147, 255, 0.62);
                                 color: #8db7ff;
                                                                 background: rgba(16, 40, 82, 0.92);
+                                max-width: 340px;
                 .node.result-badge {{
                     font-size: 0.68rem;
                     font-weight: 600;
@@ -3806,7 +3819,7 @@ def render_bracket(
                     border-radius: 5px;
                     padding: 1px 5px;
                     white-space: nowrap;
-                    max-width: 200px;
+                    max-width: 320px;
                     overflow: hidden;
                     text-overflow: ellipsis;
                     z-index: 10;
@@ -3825,7 +3838,7 @@ def render_bracket(
         border-radius: 5px;
         padding: 1px 5px;
         white-space: nowrap;
-        max-width: 200px;
+        max-width: 320px;
         overflow: hidden;
         text-overflow: ellipsis;
         z-index: 10;
