@@ -47,7 +47,7 @@ SERVICE_ACCOUNT_JSON = _get_config_value("JPQ_GOOGLE_SERVICE_ACCOUNT_JSON", "")
 GOOGLE_EXPORT_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 GOOGLE_SERVICE_ACCOUNT_SCOPES = (
     "https://www.googleapis.com/auth/drive.readonly",
-    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    "https://www.googleapis.com/auth/spreadsheets",
 )
 DEFAULT_VISIBLE_CATEGORIES = (
     "c5 40",
@@ -3261,6 +3261,132 @@ def _build_matchup_guides_svg(
 LABEL_ROW_HEIGHT = 28
 
 
+@st.cache_data(show_spinner=False)
+def _build_propagation_topology() -> Dict[Tuple[str, str], List[Tuple[str, int]]]:
+    """Lee partidos_jpq.csv y construye el mapa de avance:
+    (categoria_lower, src_match) → [(target_match, pareja_position), ...]
+    Cacheado para no releer el archivo en cada render.
+    """
+    csv_path = Path(__file__).parent / "partidos_jpq.csv"
+    if not csv_path.exists():
+        return {}
+
+    df = pd.read_csv(csv_path, sep=";")
+    df.columns = df.columns.str.strip()
+    topology: Dict[Tuple[str, str], List[Tuple[str, int]]] = {}
+
+    for _, row in df.iterrows():
+        cat = str(row.get("categoria", "")).strip().lower()
+        tgt_num = str(row.get("numero de partido", "")).strip()
+        try:
+            tgt_num = str(int(float(tgt_num)))
+        except (ValueError, TypeError):
+            continue
+        pareja = str(row.get("pareja", "")).strip()
+
+        # "TEAM (espera ganador del partido N)" → feeds position 2 of target
+        m = re.match(
+            r"^(.+?)\s*\(espera ganador del partido\s+(\d+)\)", pareja, re.IGNORECASE
+        )
+        if m:
+            src_num = m.group(2)
+            topology.setdefault((cat, src_num), []).append((tgt_num, 2))
+            continue
+
+        # "#N vs #M" → each feeds as position 1 and 2
+        m2 = re.match(r"^#(\d+)\s+vs\s+#(\d+)$", pareja, re.IGNORECASE)
+        if m2:
+            src1, src2 = m2.group(1), m2.group(2)
+            topology.setdefault((cat, src1), []).append((tgt_num, 1))
+            topology.setdefault((cat, src2), []).append((tgt_num, 2))
+
+    return topology
+
+
+def _propagate_results_to_sheet(
+    results: Dict[Tuple[str, str], Dict[str, str]],
+) -> None:
+    """Escribe ganadores a las celdas pareja_1/pareja_2 del partido siguiente.
+    Solo actualiza celdas vacías o con placeholder. Idempotente.
+    Usa session_state para no repetir escrituras cuando los resultados no cambiaron.
+    """
+    if not RESULTS_SHEET_ID or not results:
+        return
+
+    # Dedup: skip if results haven't changed since last propagation
+    import hashlib
+    results_key = str(sorted((str(k), v.get("ganador", "")) for k, v in results.items()))
+    results_hash = hashlib.md5(results_key.encode()).hexdigest()
+    if st.session_state.get("_last_propagated_hash") == results_hash:
+        return
+
+    topology = _build_propagation_topology()
+    if not topology:
+        return
+
+    try:
+        creds = _build_service_account_credentials()
+        if creds is None:
+            return
+        transport_module = importlib.import_module("google.auth.transport.requests")
+        AuthorizedSession = getattr(transport_module, "AuthorizedSession")
+        session = AuthorizedSession(creds)
+
+        resp = session.get(
+            f"https://sheets.googleapis.com/v4/spreadsheets/{RESULTS_SHEET_ID}/values/A1:H5000",
+            timeout=SHEET_TIMEOUT_SECONDS,
+        )
+        if resp.status_code != 200:
+            return
+
+        values = resp.json().get("values", [])
+        if not values:
+            return
+
+        header = [h.strip().lower() for h in values[0]]
+        col = {name: idx for idx, name in enumerate(header)}
+        row_index: Dict[Tuple[str, str], int] = {}
+        for i, row in enumerate(values[1:], start=1):
+            padded = list(row) + [""] * max(0, len(header) - len(row))
+            cat = padded[col["categoria"]].strip().lower()
+            num = padded[col["numero_partido"]].strip()
+            row_index[(cat, num)] = i
+
+        updates: List[Dict] = []
+        for (cat, src_num), result_data in results.items():
+            winner = result_data.get("ganador", "").strip()
+            if not winner:
+                continue
+            for tgt_num, position in topology.get((cat, src_num), []):
+                tgt_row_i = row_index.get((cat, tgt_num))
+                if tgt_row_i is None:
+                    continue
+                tgt_row = list(values[tgt_row_i])
+                padded_tgt = tgt_row + [""] * max(0, len(header) - len(tgt_row))
+                pareja_col = col.get("pareja_1", 4) if position == 1 else col.get("pareja_2", 5)
+                current_val = padded_tgt[pareja_col].strip() if len(padded_tgt) > pareja_col else ""
+                is_placeholder = bool(
+                    re.match(r"^ganador partido \d+$", current_val, re.IGNORECASE)
+                )
+                if current_val == "" or is_placeholder:
+                    col_letter = chr(ord("A") + pareja_col)
+                    sheet_row = tgt_row_i + 2  # +1 header offset, +1 for 1-based
+                    updates.append({"range": f"{col_letter}{sheet_row}", "values": [[winner]]})
+
+        if updates:
+            session.post(
+                f"https://sheets.googleapis.com/v4/spreadsheets/{RESULTS_SHEET_ID}/values:batchUpdate",
+                json={"valueInputOption": "RAW", "data": updates},
+                timeout=SHEET_TIMEOUT_SECONDS,
+            )
+            print(f"PROPAGACION: {len(updates)} celda(s) actualizadas")
+
+        st.session_state["_last_propagated_hash"] = results_hash
+
+    except Exception as exc:
+        print(f"PROPAGACION: error propagando resultados: {exc}")
+
+
 def _apply_results_to_nodes(
     nodes: List[Dict[str, object]],
     results: Dict[Tuple[str, str], Dict[str, str]],
@@ -3899,6 +4025,7 @@ def main() -> None:
     selected_category = category_labels[selected_category_label]
     payload = brackets[selected_category]
     results = load_results()
+    _propagate_results_to_sheet(results)
     render_bracket(
         grid=payload["grid"],
         category=selected_category,
