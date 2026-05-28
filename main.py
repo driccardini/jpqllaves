@@ -167,7 +167,7 @@ def load_results() -> Dict[Tuple[str, str], Dict[str, str]]:
 
         url = (
             f"https://sheets.googleapis.com/v4/spreadsheets/{RESULTS_SHEET_ID}"
-            f"/values/resultados!A1:H5000"
+            f"/values/A1:H5000"
         )
         resp = session.get(url, timeout=SHEET_TIMEOUT_SECONDS)
         if resp.status_code != 200:

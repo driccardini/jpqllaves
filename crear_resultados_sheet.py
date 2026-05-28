@@ -2,18 +2,17 @@
 """
 Script de configuración — ejecutar UNA SOLA VEZ antes del torneo.
 
-Crea el Google Sheet "JPQ Resultados 1er Torneo" con todas las filas
-de partidos listas para cargar resultados durante el fin de semana.
+Rellena el Google Sheet de resultados del torneo JPQ con todos los
+partidos, listo para cargar resultados durante el fin de semana.
 
-Uso:
-    python crear_resultados_sheet.py
-
-Requiere la variable de entorno JPQ_GOOGLE_SERVICE_ACCOUNT_FILE (o
-JPQ_GOOGLE_SERVICE_ACCOUNT_JSON) configurada con credenciales que tengan
-permisos de escritura en Google Sheets (scope: spreadsheets).
+Pasos previos (solo la primera vez):
+  1. Crear un Google Sheet vacío en https://sheets.google.com
+  2. Compartirlo con Editor con: padelstats@padelstats-492015.iam.gserviceaccount.com
+  3. Copiar el ID del Sheet de la URL (el tramo largo entre /d/ y /edit)
+  4. Ejecutar: python crear_resultados_sheet.py <SHEET_ID>
 
 Al finalizar imprime el ID del Sheet que hay que configurar como
-JPQ_RESULTS_SHEET_ID en el entorno de Streamlit y en .env local.
+JPQ_RESULTS_SHEET_ID en Streamlit Cloud y en .env local.
 """
 from __future__ import annotations
 
@@ -21,6 +20,7 @@ import importlib
 import json
 import os
 import re
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -30,7 +30,6 @@ SERVICE_ACCOUNT_JSON = os.getenv("JPQ_GOOGLE_SERVICE_ACCOUNT_JSON", "")
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive.file",
 ]
 
 
@@ -75,6 +74,14 @@ def _parse_pairs(pareja: str) -> tuple[str, str]:
 
 
 def main() -> None:
+    if len(sys.argv) < 2:
+        print(__doc__)
+        print("ERROR: Falta el ID del Sheet como argumento.")
+        print("Uso: python crear_resultados_sheet.py <SHEET_ID>")
+        sys.exit(1)
+
+    sheet_id = sys.argv[1].strip()
+
     csv_path = Path(__file__).parent / "partidos_jpq.csv"
     if not csv_path.exists():
         raise RuntimeError(f"No se encontró {csv_path}")
@@ -97,7 +104,6 @@ def main() -> None:
     for _, row in df.iterrows():
         cat = str(row.get("categoria", "")).strip()
         num = str(row.get("numero de partido", "")).strip()
-        # Normalize float-like numbers ("50.0" → "50")
         try:
             num = str(int(float(num)))
         except (ValueError, TypeError):
@@ -115,27 +121,19 @@ def main() -> None:
     AuthorizedSession = getattr(transport_module, "AuthorizedSession")
     session = AuthorizedSession(creds)
 
-    # Crear el spreadsheet
-    create_body = {
-        "properties": {"title": "JPQ Resultados 1er Torneo"},
-        "sheets": [{"properties": {"title": "resultados", "index": 0}}],
-    }
-    resp = session.post(
-        "https://sheets.googleapis.com/v4/spreadsheets",
-        json=create_body,
+    # Limpiar contenido previo y escribir datos
+    clear_resp = session.delete(
+        f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/A1:H5000:clear",
         timeout=20,
     )
-    if resp.status_code != 200:
-        raise RuntimeError(f"Error al crear el Sheet ({resp.status_code}): {resp.text[:400]}")
+    # Ignorar error de clear (puede ser método incorrecto)
+    clear_resp2 = session.post(
+        f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/A1:H5000:clear",
+        timeout=20,
+    )
 
-    sheet_data = resp.json()
-    sheet_id: str = sheet_data["spreadsheetId"]
-    sheet_url: str = sheet_data["spreadsheetUrl"]
-    print(f"Sheet creado: {sheet_url}")
-
-    # Escribir los datos
     update_resp = session.put(
-        f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/resultados!A1",
+        f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/A1",
         json={"values": sheet_rows},
         params={"valueInputOption": "RAW"},
         timeout=30,
@@ -145,22 +143,18 @@ def main() -> None:
             f"Error al escribir datos ({update_resp.status_code}): {update_resp.text[:400]}"
         )
 
-    # Negrita en la fila de encabezado
-    fmt_resp = session.post(
+    # Negrita + fondo gris en encabezado
+    session.post(
         f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}:batchUpdate",
         json={
             "requests": [
                 {
                     "repeatCell": {
-                        "range": {
-                            "sheetId": 0,
-                            "startRowIndex": 0,
-                            "endRowIndex": 1,
-                        },
+                        "range": {"startRowIndex": 0, "endRowIndex": 1},
                         "cell": {
                             "userEnteredFormat": {
                                 "textFormat": {"bold": True},
-                                "backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.9},
+                                "backgroundColor": {"red": 0.85, "green": 0.85, "blue": 0.85},
                             }
                         },
                         "fields": "userEnteredFormat(textFormat,backgroundColor)",
@@ -169,7 +163,6 @@ def main() -> None:
                 {
                     "autoResizeDimensions": {
                         "dimensions": {
-                            "sheetId": 0,
                             "dimension": "COLUMNS",
                             "startIndex": 0,
                             "endIndex": 8,
@@ -180,22 +173,19 @@ def main() -> None:
         },
         timeout=20,
     )
-    if fmt_resp.status_code != 200:
-        print(f"Advertencia: no se pudo formatear el encabezado ({fmt_resp.status_code})")
 
+    sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
     print("\n" + "=" * 60)
-    print("  SHEET CREADO EXITOSAMENTE")
+    print("  DATOS CARGADOS EXITOSAMENTE")
     print("=" * 60)
     print(f"  URL : {sheet_url}")
     print(f"  ID  : {sheet_id}")
     print()
     print("  Próximos pasos:")
-    print(f"  1. Compartí el Sheet con tu cuenta de servicio (si no")
-    print(f"     tiene acceso automático).")
-    print(f"  2. Configurar en Streamlit Cloud (Settings → Secrets):")
-    print(f"       JPQ_RESULTS_SHEET_ID = \"{sheet_id}\"")
-    print(f"  3. Configurar localmente en tu .env o shell:")
-    print(f"       export JPQ_RESULTS_SHEET_ID=\"{sheet_id}\"")
+    print("  1. Configurar en Streamlit Cloud (Settings → Secrets):")
+    print(f'       JPQ_RESULTS_SHEET_ID = "{sheet_id}"')
+    print("  2. Configurar localmente:")
+    print(f'       export JPQ_RESULTS_SHEET_ID="{sheet_id}"')
     print("=" * 60)
 
 
