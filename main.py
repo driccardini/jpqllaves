@@ -3450,12 +3450,27 @@ def render_bracket(
     _align_match_nodes(nodes=node_data, category=category)
     _apply_results_to_nodes(nodes=node_data, results=results or {}, category=category)
 
+    cat_key = (category or "").lower()
     cell_html = []
     for node in node_data:
         safe_text = escape(str(node.get("display_text", node["text"])))
         cell_html.append(
             f'<div class="node {node["class"]}" style="top:{int(node["y"])}px;left:{int(node["x"])}px;">{safe_text}</div>'
         )
+        # If this match-id has a result, show winner badge below the node
+        if node.get("class") == "match-id" and results:
+            match_num = node.get("text", "")
+            result = (results or {}).get((cat_key, match_num))
+            if result and result.get("ganador"):
+                ganador = escape(result["ganador"])
+                marcador = escape(result.get("marcador", ""))
+                badge_top = int(node["y"]) + CELL_HEIGHT
+                badge_left = int(node["x"]) - 30
+                marcador_html = f' <span class="result-score">{marcador}</span>' if marcador else ""
+                cell_html.append(
+                    f'<div class="node result-badge" style="top:{badge_top}px;left:{badge_left}px;">'
+                    f'&#10003; {ganador}{marcador_html}</div>'
+                )
 
     connectors_svg = _build_connectors(nodes=node_data, board_rows=rows, category=category)
     matchup_guides_svg = _build_matchup_guides_svg(nodes=node_data, category=category)
@@ -3617,6 +3632,25 @@ def render_bracket(
                                 border: 1px solid rgba(92, 147, 255, 0.62);
                                 color: #8db7ff;
                                                                 background: rgba(16, 40, 82, 0.92);
+                .node.result-badge {{
+                    font-size: 0.68rem;
+                    font-weight: 600;
+                    color: #4ade80;
+                    background: rgba(20, 50, 30, 0.92);
+                    border: 1px solid rgba(74, 222, 128, 0.45);
+                    border-radius: 5px;
+                    padding: 1px 5px;
+                    white-space: nowrap;
+                    max-width: 200px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    z-index: 10;
+                }}
+                .result-score {{
+                    color: #a3e4b8;
+                    font-size: 0.64rem;
+                    margin-left: 3px;
+                }}
       }}
       .node.cat-title {{
                 font-weight: 800;
