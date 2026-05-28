@@ -2111,10 +2111,10 @@ def _align_match_nodes(
             seed_centers[str(node["text"]).strip()] = int(node["y"]) + 12
 
         c2_seed_pairs = {
-            "50": ("12°", "10°"),
-            "51": ("5°", "8°"),
-            "54": ("7°", "6°"),
-            "55": ("9°", "11°"),
+            "50": ("9°", "8°"),
+            "51": ("5°", "12°"),
+            "54": ("11°", "6°"),
+            "55": ("7°", "10°"),
         }
 
         for match_number, (seed_a, seed_b) in c2_seed_pairs.items():
