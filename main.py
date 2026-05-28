@@ -7,7 +7,7 @@ import re
 import importlib
 from io import BytesIO
 import textwrap
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.request import urlopen
 from urllib.parse import quote
 
@@ -45,7 +45,10 @@ SHEET_ID = _get_config_value("JPQ_SHEET_ID", "")
 SERVICE_ACCOUNT_FILE = _get_config_value("JPQ_GOOGLE_SERVICE_ACCOUNT_FILE", "")
 SERVICE_ACCOUNT_JSON = _get_config_value("JPQ_GOOGLE_SERVICE_ACCOUNT_JSON", "")
 GOOGLE_EXPORT_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-GOOGLE_SERVICE_ACCOUNT_SCOPES = ("https://www.googleapis.com/auth/drive.readonly",)
+GOOGLE_SERVICE_ACCOUNT_SCOPES = (
+    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/spreadsheets.readonly",
+)
 DEFAULT_VISIBLE_CATEGORIES = (
     "c5 40",
     "c6 35",
@@ -59,6 +62,7 @@ DEFAULT_VISIBLE_CATEGORIES = (
 )
 VISIBLE_CATEGORIES_ENV = os.getenv("JPQ_VISIBLE_CATEGORIES", "all").strip()
 SHEET_TIMEOUT_SECONDS = 20
+RESULTS_SHEET_ID = _get_config_value("JPQ_RESULTS_SHEET_ID", "")
 LOGO_GLOB = "Logo JPQ*"
 CELL_WIDTH = 132
 CELL_HEIGHT = 26
@@ -139,6 +143,63 @@ def load_brackets() -> Dict[str, Dict[str, object]]:
         return local_brackets
 
     return {}
+
+
+@st.cache_data(show_spinner=False, ttl=60)
+def load_results() -> Dict[Tuple[str, str], Dict[str, str]]:
+    """Lee el Sheet de resultados del torneo.
+
+    Retorna un dict keyed por (categoria_lower, numero_partido) con los
+    campos 'ganador' y 'marcador' de cada partido jugado.
+    Retorna un dict vacío si no hay resultados o no está configurado el Sheet.
+    """
+    if not RESULTS_SHEET_ID:
+        return {}
+
+    try:
+        creds = _build_service_account_credentials()
+        if creds is None:
+            return {}
+
+        transport_module = importlib.import_module("google.auth.transport.requests")
+        AuthorizedSession = getattr(transport_module, "AuthorizedSession")
+        session = AuthorizedSession(creds)
+
+        url = (
+            f"https://sheets.googleapis.com/v4/spreadsheets/{RESULTS_SHEET_ID}"
+            f"/values/resultados!A1:H5000"
+        )
+        resp = session.get(url, timeout=SHEET_TIMEOUT_SECONDS)
+        if resp.status_code != 200:
+            print(f"RESULTADOS: HTTP {resp.status_code} al leer el Sheet de resultados")
+            return {}
+
+        values = resp.json().get("values", [])
+        if not values:
+            return {}
+
+        header = [h.strip().lower() for h in values[0]]
+        results: Dict[Tuple[str, str], Dict[str, str]] = {}
+
+        for row in values[1:]:
+            # Pad row to avoid index errors
+            padded = list(row) + [""] * max(0, len(header) - len(row))
+            row_dict = dict(zip(header, padded))
+            cat = str(row_dict.get("categoria", "")).strip().lower()
+            num = str(row_dict.get("numero_partido", "")).strip()
+            ganador = str(row_dict.get("ganador", "")).strip()
+            marcador = str(row_dict.get("marcador", "")).strip()
+
+            if not cat or not num:
+                continue
+            if ganador:
+                results[(cat, num)] = {"ganador": ganador, "marcador": marcador}
+
+        return results
+
+    except Exception as exc:
+        print(f"RESULTADOS: error cargando resultados: {exc}")
+        return {}
 
 
 def _download_workbook_bytes() -> bytes:
@@ -3200,7 +3261,55 @@ def _build_matchup_guides_svg(
 LABEL_ROW_HEIGHT = 28
 
 
-def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
+def _apply_results_to_nodes(
+    nodes: List[Dict[str, object]],
+    results: Dict[Tuple[str, str], Dict[str, str]],
+    category: str,
+) -> None:
+    """Sustituye referencias a partidos (#N / 'espera ganador del partido N')
+    con el nombre real del ganador cuando el resultado ya está cargado."""
+    if not results:
+        return
+
+    cat_key = (category or "").lower()
+
+    for node in nodes:
+        if node.get("class") not in {"team"}:
+            continue
+
+        text: str = str(node.get("display_text", node.get("text", "")))
+
+        def _replace_hash(m: re.Match) -> str:  # type: ignore[type-arg]
+            num = m.group(1)
+            r = results.get((cat_key, num))
+            return r["ganador"] if r and r.get("ganador") else m.group(0)
+
+        new_text = re.sub(r"#(\d+)", _replace_hash, text)
+
+        def _replace_espera(m: re.Match) -> str:  # type: ignore[type-arg]
+            team = m.group(1).strip()
+            num = m.group(2)
+            r = results.get((cat_key, num))
+            if r and r.get("ganador"):
+                return f"{team} vs {r['ganador']}"
+            return m.group(0)
+
+        new_text = re.sub(
+            r"(.+?)\s*\(espera ganador del partido\s+(\d+)\)",
+            _replace_espera,
+            new_text,
+            flags=re.IGNORECASE,
+        )
+
+        node["display_text"] = new_text
+
+
+def render_bracket(
+    grid: pd.DataFrame,
+    category: str,
+    sheet_name: str,
+    results: Optional[Dict[Tuple[str, str], Dict[str, str]]] = None,
+) -> None:
     rows, cols = grid.shape
     width = max(900, cols * CELL_WIDTH + 40)
     height = max(380, rows * CELL_HEIGHT + LABEL_ROW_HEIGHT + 20)
@@ -3339,6 +3448,7 @@ def render_bracket(grid: pd.DataFrame, category: str, sheet_name: str) -> None:
             )
 
     _align_match_nodes(nodes=node_data, category=category)
+    _apply_results_to_nodes(nodes=node_data, results=results or {}, category=category)
 
     cell_html = []
     for node in node_data:
@@ -3708,10 +3818,12 @@ def main() -> None:
     )
     selected_category = category_labels[selected_category_label]
     payload = brackets[selected_category]
+    results = load_results()
     render_bracket(
         grid=payload["grid"],
         category=selected_category,
         sheet_name=str(payload["sheet"]),
+        results=results,
     )
 
 
