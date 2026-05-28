@@ -606,16 +606,16 @@ def _build_connectors(
             connector_paths.append(route(x1, y1, x2, y2))
 
         append_direct_connector("1°", "57")
-        append_direct_connector("12°", "50")
-        append_direct_connector("10°", "50")
+        append_direct_connector("9°", "50")
+        append_direct_connector("8°", "50")
         append_direct_connector("5°", "51")
-        append_direct_connector("8°", "51")
+        append_direct_connector("12°", "51")
         append_direct_connector("4°", "58")
         append_direct_connector("3°", "59")
-        append_direct_connector("7°", "54")
+        append_direct_connector("11°", "54")
         append_direct_connector("6°", "54")
-        append_direct_connector("9°", "55")
-        append_direct_connector("11°", "55")
+        append_direct_connector("7°", "55")
+        append_direct_connector("10°", "55")
         append_direct_connector("2°", "60")
 
     if (category or "").lower() == "c3":
