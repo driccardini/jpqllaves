@@ -3584,7 +3584,10 @@ def render_bracket(
             f'<div class="node {node["class"]}" style="top:{int(node["y"])}px;left:{int(node["x"])}px;">{safe_text}</div>'
         )
         # If this match-id has a result, show winner badge below the node
-        if node.get("class") == "match-id" and results:
+        # Skip match-id nodes that belong to the legend/schedule table at the bottom
+        if node.get("class") == "match-id" and results and (
+            legend_start_row is None or int(node["row"]) < legend_start_row
+        ):
             match_num = node.get("text", "")
             result = (results or {}).get((cat_key, match_num))
             if result and result.get("ganador"):
@@ -3612,7 +3615,10 @@ def render_bracket(
     # Render incoming-winner badges on target match nodes
     if incoming_winners:
         match_nodes_map: Dict[str, Dict[str, object]] = {
-            str(n["text"]): n for n in node_data if n.get("class") == "match-id"
+            str(n["text"]): n
+            for n in node_data
+            if n.get("class") == "match-id"
+            and (legend_start_row is None or int(n["row"]) < legend_start_row)
         }
         for tgt_num, winners in incoming_winners.items():
             tgt_node = match_nodes_map.get(tgt_num)
