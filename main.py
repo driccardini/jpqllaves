@@ -3370,7 +3370,7 @@ def _propagate_results_to_sheet(
                 )
                 if current_val == "" or is_placeholder:
                     col_letter = chr(ord("A") + pareja_col)
-                    sheet_row = tgt_row_i + 2  # +1 header offset, +1 for 1-based
+                    sheet_row = tgt_row_i + 1  # values[0]=header=row1, values[n]=row n+1
                     updates.append({"range": f"{col_letter}{sheet_row}", "values": [[winner]]})
 
         if updates:
