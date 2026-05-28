@@ -2030,7 +2030,7 @@ def _find_direct_team_center(
             for node in nodes
             if node["class"] == "team"
             and int(node["col"]) == target_col
-            and abs(int(node["row"]) - target_row) <= 6
+            and abs(int(node["row"]) - target_row) <= 8
             and (legend_start_row is None or int(node["row"]) < legend_start_row)
         ],
         key=lambda node: int(node["row"]),
@@ -2137,6 +2137,47 @@ def _align_match_nodes(
                 continue
 
             target_node["y"] = round((center_a + center_b) / 2) - 12
+
+        # Fine-tune 58/59 so they sit midway between prior-match winner and fixed opponent.
+        c2_midpoint_pairs = {
+            "58": "51",
+            "59": "54",
+        }
+
+        for target_match, source_match in c2_midpoint_pairs.items():
+            target_node = next(
+                (
+                    node
+                    for node in nodes
+                    if node["class"] == "match-id"
+                    and str(node["text"]).strip() == target_match
+                    and (legend_start_row is None or int(node["row"]) < legend_start_row)
+                ),
+                None,
+            )
+            source_node = next(
+                (
+                    node
+                    for node in nodes
+                    if node["class"] == "match-id"
+                    and str(node["text"]).strip() == source_match
+                    and (legend_start_row is None or int(node["row"]) < legend_start_row)
+                ),
+                None,
+            )
+            if target_node is None or source_node is None:
+                continue
+
+            direct_center = _find_direct_team_center(
+                nodes=nodes,
+                target_node=target_node,
+                legend_start_row=legend_start_row,
+            )
+            if direct_center is None:
+                continue
+
+            source_center = int(source_node["y"]) + 12
+            target_node["y"] = round((source_center + direct_center) / 2) - 12
 
     if (category or "").lower() == "c3":
         seed_centers: Dict[str, int] = {}
