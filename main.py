@@ -3367,6 +3367,7 @@ def _propagate_results_to_sheet(
                 current_val = padded_tgt[pareja_col].strip() if len(padded_tgt) > pareja_col else ""
                 is_placeholder = bool(
                     re.match(r"^ganador partido \d+$", current_val, re.IGNORECASE)
+                    or re.match(r"^#\d+$", current_val)
                 )
                 if current_val == "" or is_placeholder:
                     col_letter = chr(ord("A") + pareja_col)
