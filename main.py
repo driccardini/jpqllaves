@@ -468,7 +468,7 @@ def _build_connectors(
         default_x = int(right_node["x"]) + 88
         category_key = (category or "").lower()
 
-        if category_key in {"d2", "d4", "d5", "d6", "d7"}:
+        if category_key in {"c2", "d2", "d4", "d5", "d6", "d7"}:
             return int(right_node["x"]) - 12
 
         if category_key != "c3":
@@ -1457,18 +1457,12 @@ def _compute_connector_pairs(
             connector_pairs.append((left_node, right_node))
 
         explicit_c2_pairs = [
-            ("1", "49"),
-            ("34", "49"),
-            ("49", "57"),
             ("50", "57"),
             ("51", "58"),
-            ("52", "58"),
-            ("57", "61"),
-            ("58", "61"),
-            ("53", "59"),
             ("54", "59"),
             ("55", "60"),
-            ("56", "60"),
+            ("57", "61"),
+            ("58", "61"),
             ("59", "62"),
             ("60", "62"),
             ("61", "64"),
@@ -3076,7 +3070,7 @@ def _build_matchup_guides_svg(
     nodes: List[Dict[str, object]],
     category: Optional[str] = None,
 ) -> str:
-    if (category or "").lower() in {"c6 40", "c7 40"}:
+    if (category or "").lower() in {"c2", "c6 40", "c7 40"}:
         return ""
 
     matches = [
