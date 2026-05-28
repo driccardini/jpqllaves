@@ -3472,6 +3472,38 @@ def render_bracket(
                     f'&#10003; {ganador}{marcador_html}</div>'
                 )
 
+    # Build incoming-winner map: {target_match_num: [winner_name, ...]}
+    # Uses connector topology so 50→57, 51→58, etc.
+    incoming_winners: Dict[str, List[str]] = {}
+    if results:
+        for left_node, right_node in _compute_connector_pairs(node_data, category):
+            src = str(left_node["text"])
+            tgt = str(right_node["text"])
+            src_result = (results or {}).get((cat_key, src))
+            if src_result and src_result.get("ganador"):
+                incoming_winners.setdefault(tgt, []).append(src_result["ganador"])
+
+    # Render incoming-winner badges on target match nodes
+    if incoming_winners:
+        match_nodes_map: Dict[str, Dict[str, object]] = {
+            str(n["text"]): n for n in node_data if n.get("class") == "match-id"
+        }
+        for tgt_num, winners in incoming_winners.items():
+            tgt_node = match_nodes_map.get(tgt_num)
+            if tgt_node is None:
+                continue
+            # Don't show incoming if target match already has its own result
+            tgt_result = (results or {}).get((cat_key, tgt_num))
+            if tgt_result and tgt_result.get("ganador"):
+                continue
+            for i, winner in enumerate(winners):
+                badge_top = int(tgt_node["y"]) - CELL_HEIGHT * (i + 1)
+                badge_left = int(tgt_node["x"]) - 30
+                cell_html.append(
+                    f'<div class="node incoming-badge" style="top:{badge_top}px;left:{badge_left}px;">'
+                    f'&#8594; {escape(winner)}</div>'
+                )
+
     connectors_svg = _build_connectors(nodes=node_data, board_rows=rows, category=category)
     matchup_guides_svg = _build_matchup_guides_svg(nodes=node_data, category=category)
     logo_watermark_data_uri = load_logo_data_uri()
@@ -3651,6 +3683,20 @@ def render_bracket(
                     font-size: 0.64rem;
                     margin-left: 3px;
                 }}
+      .node.incoming-badge {{
+        font-size: 0.68rem;
+        font-weight: 600;
+        color: #fbbf24;
+        background: rgba(50, 38, 8, 0.92);
+        border: 1px solid rgba(251, 191, 36, 0.45);
+        border-radius: 5px;
+        padding: 1px 5px;
+        white-space: nowrap;
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        z-index: 10;
+      }}
       }}
       .node.cat-title {{
                 font-weight: 800;
